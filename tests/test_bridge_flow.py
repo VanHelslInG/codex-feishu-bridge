@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, List, Optional
 
 from feishu_bridge.bridge import Bridge
@@ -459,4 +460,58 @@ def test_health_payload_reports_state(tmp_path):
     payload = bridge.health()
     assert payload["ok"] is True
     assert payload["app_server_pid"] == 4242
+    store.close()
+
+
+def test_long_running_turn_reports_progress_instead_of_silence(tmp_path, monkeypatch):
+    """A slow turn must say something before it finishes."""
+    from feishu_bridge import bridge as bridge_module
+
+    monkeypatch.setattr(bridge_module, "FIRST_PROGRESS_NOTICE_SECONDS", 0.2)
+    monkeypatch.setattr(bridge_module, "PROGRESS_HEARTBEAT_SECONDS", 0.2)
+
+    bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
+    bind(bridge, store)
+    bridge._handle_message(message_event())
+    drain(bridge)
+    thread_id = store.binding("oc_1")["current_thread_id"]
+    assert store.running_turn(thread_id) is not None
+    assert find_card(im, "执行进度") is None, "nothing should be sent before the delay"
+
+    deadline = time.time() + 5
+    card = None
+    while time.time() < deadline and card is None:
+        time.sleep(0.05)
+        drain(bridge)
+        card = find_card(im, "执行进度")
+
+    assert card is not None, "the bridge must report progress while a turn runs"
+    text = json.dumps(card, ensure_ascii=False)
+    assert "执行中" in text
+    store.close()
+
+
+def test_progress_notice_stops_after_the_turn_finishes(tmp_path, monkeypatch):
+    from feishu_bridge import bridge as bridge_module
+
+    monkeypatch.setattr(bridge_module, "FIRST_PROGRESS_NOTICE_SECONDS", 0.2)
+    monkeypatch.setattr(bridge_module, "PROGRESS_HEARTBEAT_SECONDS", 0.2)
+
+    bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
+    bind(bridge, store)
+    bridge._handle_message(message_event())
+    drain(bridge)
+    thread_id = store.binding("oc_1")["current_thread_id"]
+
+    bridge._handle_app_event(
+        {
+            "method": "turn/completed",
+            "params": {"threadId": thread_id, "turn": {"id": "turn_1", "status": "completed"}},
+        }
+    )
+    drain(bridge)
+    before = len(im.sent) + len(im.replies)
+    time.sleep(0.6)
+    drain(bridge)
+    assert len(im.sent) + len(im.replies) == before, "no progress after completion"
     store.close()

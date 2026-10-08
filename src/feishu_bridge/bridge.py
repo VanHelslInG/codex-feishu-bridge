@@ -45,6 +45,10 @@ from .platform.base import Platform, current_platform
 LOG = logging.getLogger("feishu_bridge")
 
 PROGRESS_HEARTBEAT_SECONDS = 20 * 60
+# A long turn used to stay silent until it finished, which reads as "the bot
+# swallowed my message". Send one short progress card early, then fall back to
+# the slow heartbeat.
+FIRST_PROGRESS_NOTICE_SECONDS = 45
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 UNBOUND_REPLY = "这个会话还没有和 Bridge 配对。请在机器人私聊或目标群里发送 /bind <配对码>。"
 
@@ -706,6 +710,10 @@ class Bridge:
                 turn_id = str(turn.get("id") or turn.get("turnId") or "")
                 self.store.mark_running(int(queued["id"]), turn_id)
                 self._record_turn_started(thread_id, turn_id)
+                # Start the progress notice here as well, so a dropped
+                # turn/started notification cannot leave the user staring at
+                # silence. The heartbeat key makes the second call a no-op.
+                self._start_heartbeat(thread_id, turn_id)
                 return queued
             finally:
                 self.store.release_lease(f"thread:{thread_id}", self.worker_id)
@@ -1058,25 +1066,20 @@ class Bridge:
         self.store.set_setting(key, turn_id)
 
         def tick() -> None:
-            while not self.stop_event.wait(PROGRESS_HEARTBEAT_SECONDS):
-                running = self.store.running_turn(thread_id)
-                if not running:
+            delay = FIRST_PROGRESS_NOTICE_SECONDS
+            while not self.stop_event.wait(delay):
+                if self.store.running_turn(thread_id) is None:
                     self.store.set_setting(key, "")
                     return
-                progress = self._load_progress(thread_id)
-                started = int(progress.get("started_at") or time.time())
-                minutes = max(1, int((time.time() - started) / 60))
-                self._send_card(
-                    str((self.store.route(thread_id) or {"chat_id": ""})["chat_id"]),
-                    progress_card(
-                        f"仍在执行（{minutes} 分钟）",
-                        [f"最近动作：{(progress.get('recent') or [{}])[-1].get('label', '思考中')}"],
-                        thread_id,
-                        running=True,
-                    ),
-                    None,
-                    thread_id=thread_id,
-                )
+                route = self.store.route(thread_id)
+                if route:
+                    self._send_card(
+                        str(route["chat_id"]),
+                        self._progress_card(thread_id),
+                        None,
+                        thread_id=thread_id,
+                    )
+                delay = PROGRESS_HEARTBEAT_SECONDS
 
         threading.Thread(target=tick, name=f"heartbeat-{thread_id[:6]}", daemon=True).start()
 
