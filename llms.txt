@@ -1,0 +1,23 @@
+# Codex Feishu Bridge
+
+> 在飞书话题形式群里远程驱动本机 Codex。一个飞书话题 = 一个 Codex 任务：
+> 同一话题内按 FIFO 排队，不同话题并行。桥自己拉起 `codex app-server` 走 stdio
+> JSON-RPC，不碰 Codex 桌面端自己的服务。Windows 已真机验证，macOS 代码就绪但未实机验证。
+
+给 AI 助手读的入口：
+
+- [AGENTS.md](AGENTS.md) — 项目结构、怎么跑测试、硬约束、最容易踩的坑
+- [README.md](README.md) — 项目概览、快速开始（Windows / macOS）、指令表、安全边界
+- [docs/USAGE.md](docs/USAGE.md) — 使用教学：从建群、配对到跑完一个任务
+- [docs/FEISHU-SETUP.md](docs/FEISHU-SETUP.md) — 飞书开放平台开通清单，逐条附后台路径
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 数据流、话题与任务的映射、投递语义
+- [docs/MIGRATION-FROM-TELEGRAM.md](docs/MIGRATION-FROM-TELEGRAM.md) — 与原 Telegram 版的差异
+- [config.example.json](config.example.json) — 配置模板
+
+关键约束（详见 AGENTS.md）：
+
+- 依赖只有 `lark-oapi`，其余用标准库；解释器要求 ≥ 3.9。
+- 飞书事件回调必须在 3 秒内 ACK：入站只做「规范化 → 落 SQLite → 返回」，业务在 worker 里跑。
+- SQLite（WAL）是唯一真相源，入站以 `event_id` 幂等，出站是 at-least-once。
+- 密钥不进仓库：Windows 用 DPAPI（`secrets.dat`），macOS 用钥匙串。
+- 自启语义：只在 Codex 桌面端打开时启动桥，不做开机自启。
