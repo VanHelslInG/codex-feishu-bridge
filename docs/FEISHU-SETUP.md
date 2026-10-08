@@ -79,6 +79,17 @@ App Secret 只在创建时完整显示一次；丢了就重置。**不要**把�
 cd D:\Codex\飞书codex机器人
 ```
 
+**macOS**：下面 7.1–7.3 的命令在 mac 上换成 `./macos/` 下的同名脚本，注意
+**这套 macOS 脚本还没有在任何真机上跑过**（开发机上没有 Mac），第一次上机请先看
+[HANDOFF-2026-10-09-macos.md](HANDOFF-2026-10-09-macos.md) 顶部的「未实机验证」清单：
+
+```bash
+cd ~/codex-feishu-bridge
+./macos/install.sh --prompt    # ↔ install.ps1 -Prompt
+./macos/start.sh               # ↔ start.ps1
+./macos/pair-code.sh           # ↔ pair-code.ps1
+```
+
 ### 7.1 把 App ID / App Secret 交给 Bridge
 
 ```powershell

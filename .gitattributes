@@ -1,0 +1,4 @@
+# The macOS launcher scripts are run by /usr/bin/env bash on a Mac. A CRLF
+# shebang makes them fail there with "bad interpreter: ...^M", and this
+# repository is developed on Windows, so pin the line endings at the source.
+*.sh text eol=lf

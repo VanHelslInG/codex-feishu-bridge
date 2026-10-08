@@ -19,9 +19,15 @@ codex app-server
 | 平台 | 状态 |
 | --- | --- |
 | Windows 11 | 已实现；单元与集成测试 41 项通过；`install/start/status/stop.ps1` 全链路实测通过（能拉起本机 `codex.exe app-server`，健康检查 `ok: true`，停止后进程树清干净） |
-| macOS | 代码路径已就绪（Keychain、launchd 模板、`install.sh`），**尚未在真机验证** |
+| macOS | 已实现（`install/start/stop/status/pair-code`、LaunchAgent、Keychain、Codex CLI 自动定位、单元测试覆盖适配层）；**全部未在 Mac 真机跑过**，见下 |
 
-尚未验证的部分：与飞书真实 API 的联调（需要先按开通清单把自建应用建出来），以及 macOS 真机。
+> **macOS 未做实机验证**：开发机上没有 Mac，也没有 macOS 环境，因此 macOS 侧
+> 只有静态检查与单元测试，没有一次真实运行。具体哪些地方必须上真机确认，见
+> [docs/HANDOFF-2026-10-09-macos.md](docs/HANDOFF-2026-10-09-macos.md) 顶部的
+> 「未实机验证」清单；`macos/*.sh` 与 plist 模板的注释里也都有 `NOT YET VERIFIED
+> ON A REAL MAC` 标记。
+
+仍未验证的部分：与飞书真实 API 的联调（需要先按开通清单把自建应用建出来），以及 macOS 真机。
 
 首版范围是核心闭环：消息/图片输入、任务路由与队列、审批卡片、进度与中断、结果与图片回传、重启恢复。
 语音（STT/TTS）、通知传感器、Computer Use、多实例隔离**不在本版**。
@@ -50,6 +56,38 @@ cd D:\Codex\飞书codex机器人
 4. 在群里 `@机器人 <项目> <任务内容>`，机器人会自动建话题、建任务并开始执行。之后直接在该话题里发消息即可继续。
 
 停止：`.\windows\stop.ps1`（SQLite 状态与产物都会保留）。
+
+## 快速开始（macOS）
+
+> 这套脚本从未在 Mac 上跑过，第一次上机请按
+> [docs/HANDOFF-2026-10-09-macos.md](docs/HANDOFF-2026-10-09-macos.md) 顶部的
+> 清单逐项确认。
+
+```bash
+cd ~/codex-feishu-bridge
+./macos/install.sh --prompt      # 建虚拟环境、装依赖、写 config、把凭据存进钥匙串
+./macos/start.sh                 # 前台预检 + 后台拉起 + 等健康检查
+./macos/status.sh
+./macos/pair-code.sh             # 取配对码，然后在飞书里 /bind
+```
+
+要装「只在 Codex 桌面端打开时启动」的 LaunchAgent：
+
+```bash
+./macos/install-agent.sh         # 装 launchd 配置（改动当前用户的 launchd 状态）
+./macos/uninstall-agent.sh       # 卸载
+```
+
+停止：`./macos/stop.sh`（SQLite 状态与产物都会保留）。
+
+与 Windows 的对应关系：`install.sh ↔ install.ps1`、`start/stop/status/pair-code`
+一一对应、`install-agent.sh ↔ install-autostart.ps1`。两边的自启语义一致——按
+`StartInterval` 轮询（120 秒），**只有当 Codex 桌面端在跑**才把桥拉起来，不开机自启、
+不在 Codex 关闭后继续跑。
+
+应用目录在 `~/Library/Application Support/CodexFeishuBridge`（`bridge.log`、
+`state.sqlite3`、`inbox/`、`artifacts/`），可用 `CODEX_FEISHU_BRIDGE_HOME` 覆盖。
+凭据存在登录钥匙串（service `codex-feishu-bridge`），不落盘、不进 Git。
 
 ## 项目别名
 
