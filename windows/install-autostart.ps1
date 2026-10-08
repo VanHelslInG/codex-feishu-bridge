@@ -49,7 +49,7 @@ $principal = New-ScheduledTaskPrincipal `
 
 Register-ScheduledTask `
     -TaskName $TaskName `
-    -Trigger $atLogon, $keepAlive `
+    -Trigger $keepAlive `
     -Action $action `
     -Settings $settings `
     -Principal $principal `
