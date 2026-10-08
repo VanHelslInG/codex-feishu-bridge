@@ -1383,10 +1383,27 @@ class Bridge:
             candidate = item.get("path")
             if candidate:
                 paths.append(str(candidate))
+            # A fileChange item addresses its targets through the keys of a
+            # ``changes`` map (path -> {type, content}), not through a
+            # top-level ``path``, so reading only ``path`` never spots the
+            # file the turn actually produced.
+            changes = item.get("changes")
+            if isinstance(changes, dict):
+                paths.extend(str(entry) for entry in changes)
+            elif isinstance(changes, list):
+                for entry in changes:
+                    if isinstance(entry, dict) and entry.get("path"):
+                        paths.append(str(entry["path"]))
+                    elif isinstance(entry, str):
+                        paths.append(entry)
         if isinstance(item.get("artifacts"), list):
             for entry in item["artifacts"]:
                 if isinstance(entry, dict) and entry.get("path"):
                     paths.append(str(entry["path"]))
+        if not paths and item_type in {"imageView", "image", "fileChange", "document", "file"}:
+            # Nothing usable on an item we expected to carry a file: keep the
+            # item's own shape in the log so a silent miss stays diagnosable.
+            LOG.info("No artifact path on a %s item; keys=%s", item_type, sorted(item))
         for candidate in paths:
             path = Path(candidate)
             if not path.is_file():

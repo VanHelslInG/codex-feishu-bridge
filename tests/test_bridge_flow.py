@@ -638,6 +638,22 @@ def test_artifact_inside_the_workspace_is_delivered(tmp_path):
     store.close()
 
 
+def test_artifact_paths_are_read_from_the_file_change_map(tmp_path):
+    """A real app-server fileChange addresses files by the keys of `changes`."""
+    bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
+    workspace = tmp_path / "workspace"
+    chart = workspace / "chart.png"
+    chart.write_bytes(b"\x89PNG\r\n")
+    store.route_thread("th_1", "oc_1", project="codex", root_message_id="om_9")
+    bridge._capture_artifacts(
+        "th_1",
+        "turn_1",
+        {"type": "fileChange", "id": "call_1", "changes": {str(chart): {"type": "add"}}},
+    )
+    assert len(store.pending_artifacts("th_1")) == 1
+    store.close()
+
+
 def test_health_payload_reports_state(tmp_path):
     bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
     payload = bridge.health()
