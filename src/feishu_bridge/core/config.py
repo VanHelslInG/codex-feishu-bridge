@@ -41,6 +41,10 @@ CONFIG_DEFAULTS: Dict[str, Any] = {
     },
     "quick_start": {"project_keywords": {}},
     "projects": {},
+    # Sidebar section that holds Feishu tasks in the Codex desktop app. Null
+    # leaves threads where the app would otherwise file them (by working
+    # directory), which mixes them into unrelated projects.
+    "thread_section": "飞书",
     "feishu": {
         "domain": "https://open.feishu.cn",
         # False means "receive every message in the topic group", which

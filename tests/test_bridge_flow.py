@@ -146,6 +146,13 @@ def test_first_task_asks_for_a_model_then_starts(tmp_path):
         "a thread the desktop app cannot classify as a user conversation is indexed "
         "but never listed"
     )
+    # Feishu tasks get their own sidebar section instead of being grouped by
+    # working directory into whatever project happens to own that folder.
+    assert app.called("threadSection/create") == [{"name": "飞书"}]
+    moves = app.called("thread/section/move")
+    assert len(moves) == 1
+    assert moves[0]["threadId"] == "th_1"
+    assert moves[0]["sectionId"] == "sec_1"
     turns = app.called("turn/start")
     assert len(turns) == 1
     assert turns[0]["model"] == "ark-code-latest"

@@ -116,6 +116,9 @@ class FakeApp:
         self.started = 0
         self.resume_error: Optional[str] = None
         self.thread_turns: List[Dict[str, Any]] = []
+        self.sections: List[Dict[str, Any]] = [
+            {"id": "sec_pinned", "name": "Pinned", "appearance": None}
+        ]
         self.model_list: List[Dict[str, Any]] = [
             {"id": "ark-code-latest", "displayName": "Ark Code (Auto)"},
             {"id": "deepseek-v4.1-flash", "displayName": "DeepSeek V4.1 Flash"},
@@ -164,6 +167,16 @@ class FakeApp:
                     "turns": list(self.thread_turns),
                 }
             }
+        if method == "threadSection/list":
+            return {"data": [dict(section) for section in self.sections], "nextCursor": None}
+        if method == "threadSection/create":
+            section = {
+                "id": f"sec_{len(self.sections)}",
+                "name": params.get("name"),
+                "appearance": None,
+            }
+            self.sections.append(section)
+            return {"section": section}
         if method == "thread/fork":
             return {"thread": {"id": f"th_{next(self.thread_seq)}"}}
         if method == "thread/list":

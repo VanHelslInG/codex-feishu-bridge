@@ -631,6 +631,7 @@ class Bridge:
             self._drop_draft(token)
             return
         self.fresh_threads.add(thread_id)
+        self._move_to_section(thread_id)
 
         title = self._draft_title(draft)
         feishu_thread_id = draft.get("feishu_thread_id") or ""
@@ -686,6 +687,52 @@ class Bridge:
             **params,
             "developerInstructions": f"{RUNTIME_GUIDANCE}\n\n{NEXT_ACTIONS_PROTOCOL}",
         }
+
+    def _ensure_section(self) -> Optional[str]:
+        """Id of the desktop sidebar section that should hold Feishu tasks.
+
+        Sections are the only grouping the app-server can write — projects are
+        created from the desktop UI — so this is how Feishu conversations get a
+        group of their own instead of being filed by working directory into
+        whatever project happens to own it.
+        """
+        name = self.config.get("thread_section")
+        name = str(name).strip() if name else ""
+        if not name:
+            return None
+        cached = self.store.get_setting("thread_section_id", "") or ""
+        try:
+            sections = self.app.request("threadSection/list", {}).get("data") or []
+        except Exception:
+            LOG.warning("Could not list thread sections", exc_info=True)
+            return cached or None
+        for section in sections:
+            if str(section.get("name") or "") == name:
+                section_id = str(section.get("id") or "")
+                if section_id and section_id != cached:
+                    self.store.set_setting("thread_section_id", section_id)
+                return section_id or None
+        try:
+            created = self.app.request("threadSection/create", {"name": name})
+        except Exception:
+            LOG.warning("Could not create the %r thread section", name, exc_info=True)
+            return None
+        section_id = str((created.get("section") or {}).get("id") or "")
+        if section_id:
+            self.store.set_setting("thread_section_id", section_id)
+        return section_id or None
+
+    def _move_to_section(self, thread_id: str) -> None:
+        """Best effort: a grouping failure must never fail the task itself."""
+        try:
+            section_id = self._ensure_section()
+            if not section_id:
+                return
+            self.app.request(
+                "thread/section/move", {"threadId": thread_id, "sectionId": section_id}
+            )
+        except Exception:
+            LOG.warning("Could not file thread %s into its section", thread_id, exc_info=True)
 
     # =====================================================================
     # turn submission and scheduling
@@ -861,6 +908,7 @@ class Bridge:
             raise AppServerError("recovery thread/start returned no thread id")
 
         self.fresh_threads.add(replacement)
+        self._move_to_section(replacement)
         self.store.migrate_thread(thread_id, replacement)
         LOG.warning(
             "Codex thread %s was lost; continued on %s for queue %s",
@@ -1785,6 +1833,7 @@ class Bridge:
             if not new_thread_id:
                 raise AppServerError("thread/fork returned no thread id")
             self.store.remember_handoff(thread_id, new_thread_id)
+            self._move_to_section(new_thread_id)
             self._bind_topic(ev, new_thread_id)
             self._send_text(chat_id, f"已切换到继承历史的新任务 `{new_thread_id}`。", thread_id=new_thread_id)
         except Exception:
@@ -1805,6 +1854,7 @@ class Bridge:
             if not new_thread_id:
                 raise AppServerError("thread/fork returned no thread id")
             self._bind_topic(ev, new_thread_id)
+            self._move_to_section(new_thread_id)
             self._reply_plain(ev["chat_id"], f"已分叉到新任务 `{new_thread_id}`。", ev)
         except Exception:
             LOG.exception("fork failed")
