@@ -27,12 +27,21 @@ if (-not (Test-Path $ensure)) {
 $shell = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
 if (-not $shell) { $shell = (Get-Command powershell).Source }
 
+$vbs = Join-Path $PSScriptRoot 'run-hidden.vbs'
+if (-not (Test-Path $vbs)) {
+    throw "run-hidden.vbs not found next to this script"
+}
+$wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
+
 $keepAlive = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
     -RepetitionInterval (New-TimeSpan -Minutes $RepeatMinutes)
 
+# Launch through wscript.exe, not pwsh.exe directly: Task Scheduler gives a
+# console application a console window, and `-WindowStyle Hidden` only hides it
+# after the fact — that flash is what this indirection removes.
 $action = New-ScheduledTaskAction `
-    -Execute $shell `
-    -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -File `"$ensure`"" `
+    -Execute $wscript `
+    -Argument "//nologo `"$vbs`" `"$shell`" `"$ensure`"" `
     -WorkingDirectory $root
 
 $settings = New-ScheduledTaskSettingsSet `
