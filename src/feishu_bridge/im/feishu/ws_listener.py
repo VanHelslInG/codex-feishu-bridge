@@ -28,10 +28,15 @@ Sink = Callable[[Dict[str, Any]], None]
 def _mentions(mentions: Any) -> List[Dict[str, str]]:
     result: List[Dict[str, str]] = []
     for mention in mentions or []:
+        # MentionEvent.id is a nested UserId object, not a bare string.
+        identity = getattr(mention, "id", None)
+        open_id = getattr(identity, "open_id", "") if identity is not None else ""
+        if not open_id and isinstance(identity, str):
+            open_id = identity
         result.append(
             {
                 "key": str(getattr(mention, "key", "") or ""),
-                "open_id": str(getattr(mention, "id", "") or ""),
+                "open_id": str(open_id or ""),
                 "name": str(getattr(mention, "name", "") or ""),
             }
         )
@@ -78,7 +83,12 @@ class WsListener:
                 "thread_id": str(message.thread_id or ""),
                 "root_id": str(message.root_id or ""),
                 "parent_id": str(message.parent_id or ""),
-                "msg_type": str(message.msg_type or ""),
+                # The SDK field is message_type; older payloads used msg_type.
+                "msg_type": str(
+                    getattr(message, "message_type", None)
+                    or getattr(message, "msg_type", None)
+                    or ""
+                ),
                 "content": str(message.content or ""),
                 "create_time": int(message.create_time or 0),
                 "mentions": _mentions(message.mentions),

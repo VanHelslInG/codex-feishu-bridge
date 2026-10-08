@@ -249,6 +249,20 @@ class Bridge:
             return True
         return bool(open_id) and self.store.is_bound(chat_id, open_id)
 
+    def _mention_ok(self, ev: Dict[str, Any]) -> bool:
+        """Enforce the optional "every group message must @ the bot" mode.
+
+        When Feishu grants the sensitive group-message scope the bridge receives
+        every topic message; this switch lets the operator require an explicit
+        mention instead. Without that scope Feishu already only delivers
+        mentions, so the default of False changes nothing.
+        """
+        if not ((self.config.get("feishu") or {}).get("require_mention_in_group")):
+            return True
+        if str(ev.get("chat_type") or "").lower() == "p2p":
+            return True
+        return bool(ev.get("mentions"))
+
     # =====================================================================
     # message handling
     # =====================================================================
@@ -264,6 +278,10 @@ class Bridge:
 
         if command and command.name == "bind":
             self._handle_bind(chat_id, open_id, command.rest)
+            return
+
+        if not self._mention_ok(ev):
+            LOG.debug("Ignoring a group message without a mention")
             return
 
         if not self._authorized(chat_id, open_id):

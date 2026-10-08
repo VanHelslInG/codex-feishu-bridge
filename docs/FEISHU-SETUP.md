@@ -70,32 +70,87 @@ App Secret 只在创建时完整显示一次；丢了就重置。**不要**把�
 
 ## 7. 回填凭据并配对
 
+这一步是把 App ID / App Secret 交给 Bridge，启动它，然后在飞书里完成配对。
+一共三条命令加一条飞书消息。
+
+**准备**：打开一个 PowerShell 窗口（Win+X → 终端），然后
+
 ```powershell
 cd D:\Codex\飞书codex机器人
-.\windows\install.ps1 -Prompt      # 隐藏输入 App ID / App Secret，写进 DPAPI 保险库
-.\windows\start.ps1
-.\windows\status.ps1
 ```
 
-然后在群里发送：
-
-```text
-/bind <配对码>
-```
-
-配对码在启动日志里（也会在启动时打印到控制台）：
+### 7.1 把 App ID / App Secret 交给 Bridge
 
 ```powershell
-Get-Content "$env:LOCALAPPDATA\CodexFeishuBridge\bridge.log" -Tail 20
+.\windows\install.ps1 -Prompt
 ```
 
-配对成功后配对码立即轮换，不能重复使用。
+它会依次问两件事：
 
-接着发第一条任务：
+```text
+Feishu App ID:      ← 粘贴 cli_ 开头的那串，回车
+Feishu App Secret:  ← 粘贴密钥，回车
+```
+
+两个值都在开放平台「你的应用 → 凭证与基础信息」里。
+**输入 App Secret 时屏幕上不会显示任何字符**，这是正常的，粘贴完直接回车即可。
+密钥会被 DPAPI 加密后存到 `%LOCALAPPDATA%\CodexFeishuBridge\secrets.dat`，不会写进配置文件。
+
+看到 `credentials stored` 和 `Installed.` 就算完成。
+
+### 7.2 启动 Bridge
+
+```powershell
+.\windows\start.ps1
+```
+
+正常会依次输出：
+
+```text
+Preflight: importing the bridge
+Bridge started (pid 12345)
+Health check: ok
+```
+
+看到 `Health check: ok` 就说明 Bridge 已经连上飞书的长连接，在群里 @它就会有反应。
+
+### 7.3 取配对码
+
+```powershell
+.\windows\pair-code.ps1
+```
+
+它会直接打印 8 位配对码，以及要发的那行消息。
+
+### 7.4 在飞书里配对
+
+在**第 6 步建的那个话题群里**发送（如果敏感权限还没批下来，群里必须 @机器人）：
+
+```text
+@机器人 /bind 你刚拿到的8位码
+```
+
+机器人回「配对成功」即可。配对码用一次就立刻失效，之后不需要再配。
+
+想私下用也可以改成和机器人**私聊**发 `/bind 你刚拿到的8位码`（私聊不需要 @）。
+
+### 7.5 发第一条任务
 
 ```text
 @机器人 codex 看看当前目录里都有什么项目
 ```
+
+机器人会自动建话题、建任务并开始执行。之后就在这个话题里直接发消息，按先后顺序排队执行。
+
+### 第 7 步常见问题
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `Feishu App Secret:` 那里没反应 | 正常：安全输入不回显，粘贴后回车即可 |
+| 提示 `Virtualenv missing` | 先跑 `.\windows\install.ps1`（不带 `-Prompt` 也行） |
+| `Health check` 一直不就绪 | 看 `%LOCALAPPDATA%\CodexFeishuBridge\bridge.log` 尾部报错 |
+| 群里发 `/bind` 机器人没反应 | 敏感权限未批时必须 `@机器人 /bind …` |
+| 机器人回「配对码不正确」 | 码已经被用过一次，重新 `.\windows\pair-code.ps1` 取新的 |
 
 ## 排查
 

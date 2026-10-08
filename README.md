@@ -38,11 +38,14 @@ cd D:\Codex\飞书codex机器人
 .\windows\status.ps1
 ```
 
-3. 在飞书里把机器人拉进**话题形式群**，发送 `/bind <配对码>` 完成配对。配对码在启动日志里：
+3. 取配对码并配对：
 
 ```powershell
-Get-Content "$env:LOCALAPPDATA\CodexFeishuBridge\bridge.log" -Tail 20
+.\windows\pair-code.ps1
 ```
+
+然后在飞书**话题形式群**里发送 `@机器人 /bind <配对码>`（敏感权限未批时必须 @机器人；
+和机器人私聊则直接发 `/bind <配对码>`）。
 
 4. 在群里 `@机器人 <项目> <任务内容>`，机器人会自动建话题、建任务并开始执行。之后直接在该话题里发消息即可继续。
 
