@@ -24,7 +24,11 @@ $code = & $venvPython -m feishu_bridge.bridge pair-code
 Write-Host ''
 Write-Host "配对码：$code"
 Write-Host ''
-Write-Host '在飞书里发送（群里要 @机器人）：'
+Write-Host '在飞书里发送：'
+Write-Host "  /bind $code"
+Write-Host ''
+Write-Host '应用已开通「获取群组中所有消息」时群里直接发即可；'
+Write-Host '没开通该权限时飞书只会把 @机器人 的消息推给 Bridge，那就发：'
 Write-Host "  @机器人 /bind $code"
 Write-Host ''
 Write-Host '配对成功后这个码会立刻失效。'
