@@ -360,6 +360,26 @@ class Bridge:
                     lines.append(str(element.get("href") or ""))
         return " ".join(part for part in lines if part).strip()
 
+    @staticmethod
+    def _post_elements(ev: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Flatten a rich-text message into its elements.
+
+        Feishu delivers an image that was composed together with text as a
+        ``post`` message; the picture sits inline as an ``img`` element rather
+        than arriving as its own ``image`` message.
+        """
+        try:
+            payload = json.loads(ev.get("content") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            return []
+        blocks = payload.get("content") or payload.get("content_v2") or []
+        elements: List[Dict[str, Any]] = []
+        for block in blocks:
+            for element in block or []:
+                if isinstance(element, dict):
+                    elements.append(element)
+        return elements
+
     def _message_inputs(self, ev: Dict[str, Any]) -> List[Dict[str, Any]]:
         inputs: List[Dict[str, Any]] = []
         text = self._extract_text(ev)
@@ -388,6 +408,22 @@ class Bridge:
             except Exception:
                 LOG.exception("Failed to download an inbound file")
                 inputs.append({"type": "text", "text": f"（用户发送了文件 {name}，但下载失败。）"})
+        elif msg_type == "post":
+            for element in self._post_elements(ev):
+                if element.get("tag") != "img":
+                    continue
+                image_key = str(element.get("image_key") or "")
+                if not image_key:
+                    continue
+                try:
+                    path = self.im.download_resource(ev["message_id"], image_key, "image")
+                    LOG.info("Downloaded inline image %s to %s", image_key, path)
+                    inputs.append({"type": "localImage", "path": str(path)})
+                except Exception:
+                    LOG.exception("Failed to download an inline image")
+                    inputs.append(
+                        {"type": "text", "text": "（用户发送了一张图片，但下载失败。）"}
+                    )
         if text:
             inputs.append({"type": "text", "text": text})
         quote = self._quote_context(ev)

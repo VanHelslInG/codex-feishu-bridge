@@ -564,6 +564,46 @@ def test_image_message_becomes_a_local_image_input(tmp_path):
     store.close()
 
 
+def test_post_message_with_an_inline_image_still_yields_the_image(tmp_path):
+    """Text and image composed together arrive as one rich-text message."""
+    bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
+    bind(bridge, store)
+    image_path = tmp_path / "inline.png"
+    image_path.write_bytes(b"\x89PNG\r\n")
+    im.downloads["img_inline"] = image_path
+    content = json.dumps(
+        {
+            "title": "",
+            "content": [
+                [
+                    {"tag": "text", "text": "这是什么", "style": []},
+                    {"tag": "img", "image_key": "img_inline"},
+                ]
+            ],
+        },
+        ensure_ascii=False,
+    )
+    bridge._handle_message(
+        message_event(
+            event_id="post-1",
+            message_id="om_post",
+            msg_type="post",
+            content=content,
+        )
+    )
+    drain(bridge)
+
+    turns = app.called("turn/start")
+    assert turns, "an inline image plus text must still start a turn"
+    payload = turns[0]["input"]
+    assert any(part.get("type") == "localImage" for part in payload)
+    assert any(
+        part.get("type") == "text" and "这是什么" in str(part.get("text"))
+        for part in payload
+    )
+    store.close()
+
+
 def test_hostile_artifact_path_is_rejected(tmp_path):
     bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
     outside = tmp_path / "outside.txt"
