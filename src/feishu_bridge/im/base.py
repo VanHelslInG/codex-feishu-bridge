@@ -22,6 +22,20 @@ class TopicRef:
     root_message_id: str
 
 
+class ImError(RuntimeError):
+    """Any failure while talking to the messaging platform."""
+
+
+class AnchorLostError(ImError):
+    """The message a reply was anchored to no longer exists.
+
+    Feishu topics hang off their first message: once that message is recalled
+    or deleted, every later ``reply_in_thread`` into the topic fails. The
+    adapter raises this instead of a generic error so the bridge can fall back
+    to posting into the chat directly.
+    """
+
+
 class ImAdapter:
     # --- outbound -------------------------------------------------------
     def create_topic(self, chat_id: str, text: str) -> TopicRef:

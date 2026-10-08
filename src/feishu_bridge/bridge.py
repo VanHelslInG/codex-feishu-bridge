@@ -27,7 +27,7 @@ from .core import commands
 from .core.appserver import AppServer, AppServerError
 from .core.config import app_dir, codex_home, load_config
 from .core.store import Store
-from .im.base import ImAdapter
+from .im.base import AnchorLostError, ImAdapter
 from .im.feishu.cards import (
     approval_card,
     approval_result_card,
@@ -1331,18 +1331,26 @@ class Bridge:
 
         if kind == "text":
             text = str(payload.get("text") or "")
-            if root:
-                message_id = self.im.reply_text(chat_id, root, text)
-            else:
-                message_id = self.im.send_text(chat_id, text)
+            message_id = self._reply_or_post(
+                thread_id,
+                chat_id,
+                root,
+                lambda anchor: self.im.reply_text(chat_id, anchor, text),
+                lambda: self.im.send_text(chat_id, text),
+            )
         elif kind == "card":
             cards = payload.get("cards") or [payload["card"]]
             message_id = ""
             for index, card_payload in enumerate(cards):
-                if root:
-                    message_id = self.im.reply_card(chat_id, root, card_payload)
-                else:
-                    message_id = self.im.send_card(chat_id, card_payload)
+                message_id = self._reply_or_post(
+                    thread_id,
+                    chat_id,
+                    root,
+                    lambda anchor, card=card_payload: self.im.reply_card(
+                        chat_id, anchor, card
+                    ),
+                    lambda card=card_payload: self.im.send_card(chat_id, card),
+                )
                 if index == 0 and thread_id and not root:
                     root = message_id
                     self.store.route_thread(
@@ -1350,16 +1358,56 @@ class Bridge:
                     )
         elif kind == "image":
             image_key = self.im.upload_image(Path(str(payload["path"])))
-            message_id = self.im.send_image(chat_id, image_key, root or None)
+            message_id = self._reply_or_post(
+                thread_id,
+                chat_id,
+                root,
+                lambda anchor: self.im.send_image(chat_id, image_key, anchor),
+                lambda: self.im.send_image(chat_id, image_key, None),
+            )
         elif kind == "file":
             path = Path(str(payload["path"]))
             file_key = self.im.upload_file(path)
-            message_id = self.im.send_file(chat_id, file_key, path.name, root or None)
+            message_id = self._reply_or_post(
+                thread_id,
+                chat_id,
+                root,
+                lambda anchor: self.im.send_file(chat_id, file_key, path.name, anchor),
+                lambda: self.im.send_file(chat_id, file_key, path.name, None),
+            )
         else:
             raise ValueError(f"Unsupported outbox kind: {kind}")
 
         if message_id and thread_id:
             self.store.map_message(chat_id, message_id, str(thread_id))
+
+    def _reply_or_post(self, thread_id: Any, chat_id: str, root: str, reply: Any, post: Any) -> str:
+        """Reply inside the topic, or post into the chat when the anchor is gone.
+
+        A Feishu topic hangs off its first message. If the user recalls that
+        message, every later reply into the topic fails; the only way to keep
+        the answer from being lost is to post it into the chat directly.
+        """
+        if root:
+            try:
+                return reply(root)
+            except AnchorLostError as exc:
+                LOG.warning("Topic anchor %s is gone (%s); posting into the chat", root, exc)
+                self._forget_anchor(thread_id, chat_id)
+        return post()
+
+    def _forget_anchor(self, thread_id: Any, chat_id: str) -> None:
+        if not thread_id:
+            return
+        self.store.route_thread(
+            str(thread_id), chat_id, root_message_id=None, feishu_thread_id=None
+        )
+        self._notify_once(
+            str(thread_id),
+            "anchor",
+            "这个话题的起始消息被撤回了，机器人无法再回复到该话题里；"
+            "接下来的消息会作为新的消息发出。",
+        )
 
     def _send_text(
         self,

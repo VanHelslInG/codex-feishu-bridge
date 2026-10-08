@@ -647,3 +647,24 @@ def test_progress_notice_stops_after_the_turn_finishes(tmp_path, monkeypatch):
     drain(bridge)
     assert len(im.sent) + len(im.replies) == before, "no progress after completion"
     store.close()
+
+
+def test_withdrawn_topic_anchor_falls_back_to_a_plain_message(tmp_path):
+    """A recalled topic root must not swallow the answer."""
+    bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
+    bind(bridge, store)
+    bridge._handle_message(message_event())
+    drain(bridge)
+    thread_id = str(store.binding("oc_1")["current_thread_id"])
+    store.route_thread(thread_id, "oc_1", root_message_id="om_root")
+    im.anchor_error = "reply message failed: code=230011 msg=The message was withdrawn."
+
+    bridge._send_text("oc_1", "这是任务结果", thread_id=thread_id)
+    drain(bridge)
+
+    assert any("这是任务结果" in str(payload) for _, payload in im.sent), (
+        "the answer must be posted into the chat when the topic anchor is gone"
+    )
+    assert store.route(thread_id)["root_message_id"] is None
+    assert any("起始消息被撤回" in str(payload) for _, payload in im.sent)
+    store.close()

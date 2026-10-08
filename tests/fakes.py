@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from feishu_bridge.core.appserver import AppServerError
-from feishu_bridge.im.base import ImAdapter, TopicRef
+from feishu_bridge.im.base import AnchorLostError, ImAdapter, TopicRef
 
 
 class FakeIm(ImAdapter):
@@ -22,6 +22,7 @@ class FakeIm(ImAdapter):
         self.uploads: List[str] = []
         self.messages: Dict[str, str] = {}
         self.downloads: Dict[str, Path] = {}
+        self.anchor_error: Optional[str] = None
 
     def _next(self, prefix: str) -> str:
         return f"{prefix}_{next(self.counter)}"
@@ -32,11 +33,15 @@ class FakeIm(ImAdapter):
         return TopicRef(thread_id=self._next("omt"), root_message_id=message_id)
 
     def reply_text(self, chat_id: str, root_message_id: str, text: str) -> str:
+        if self.anchor_error:
+            raise AnchorLostError(self.anchor_error)
         message_id = self._next("om")
         self.replies.append((root_message_id, "text", text))
         return message_id
 
     def reply_card(self, chat_id: str, root_message_id: str, card: Dict[str, Any]) -> str:
+        if self.anchor_error:
+            raise AnchorLostError(self.anchor_error)
         message_id = self._next("om")
         self.replies.append((root_message_id, "card", card))
         return message_id

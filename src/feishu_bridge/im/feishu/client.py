@@ -27,15 +27,23 @@ from lark_oapi.api.im.v1 import (
     ReplyMessageRequestBody,
 )
 
-from ..base import ImAdapter, TopicRef
+from ..base import AnchorLostError, ImAdapter, ImError, TopicRef
 
 # Feishu reaction types are a fixed enum. These three are the documented
 # values closest to the Telegram bridge's 👀/✅/❌ acknowledgements.
 REACTION_TYPES = {"👀": "OnIt", "✅": "DONE", "❌": "ERROR"}
 
 
-class FeishuError(RuntimeError):
-    pass
+class FeishuError(ImError):
+    def __init__(self, message: str, code: Any = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+# Feishu replies with these when the message being replied to is gone.
+# 230011 is "The message was withdrawn"; the text check catches the rest of
+# the family without guessing at every numeric code.
+ANCHOR_LOST_CODES = {230011, 230009, 230012}
 
 
 class FeishuClient(ImAdapter):
@@ -58,8 +66,15 @@ class FeishuClient(ImAdapter):
         code = getattr(response, "code", None)
         if code not in (0, None):
             message = getattr(response, "msg", "") or "unknown error"
-            raise FeishuError(f"{action} failed: code={code} msg={message}")
+            raise FeishuError(f"{action} failed: code={code} msg={message}", code)
         return response
+
+    @staticmethod
+    def _is_anchor_lost(exc: FeishuError) -> bool:
+        if exc.code in ANCHOR_LOST_CODES:
+            return True
+        text = str(exc).lower()
+        return "withdrawn" in text or "not found" in text
 
     @staticmethod
     def _body(response: Any) -> Any:
@@ -105,7 +120,12 @@ class FeishuClient(ImAdapter):
         request = (
             ReplyMessageRequest.builder().message_id(message_id).request_body(body).build()
         )
-        response = self._check(self.client.im.v1.message.reply(request), "reply message")
+        try:
+            response = self._check(self.client.im.v1.message.reply(request), "reply message")
+        except FeishuError as exc:
+            if self._is_anchor_lost(exc):
+                raise AnchorLostError(str(exc)) from exc
+            raise
         data = self._body(response)
         return str(getattr(data, "message_id", ""))
 
