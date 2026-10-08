@@ -107,4 +107,6 @@ Get-Content "$env:LOCALAPPDATA\CodexFeishuBridge\bridge.log" -Tail 20
 | 卡片按钮点了没反应 | 回调订阅里是否加了 `card.action.trigger` |
 | 任务创建失败 | 日志里搜 `thread/start`；确认 `projects` 里的目录真实存在 |
 
-日志位置：`%LOCALAPPDATA%\CodexFeishuBridge\bridge.log`（附 `bridge.err.log`、`bridge.out.log`）。
+日志位置：`%LOCALAPPDATA%\CodexFeishuBridge\bridge.log`。
+启动脚本会先做一次前台导入预检，所以依赖缺失这类错误会在终端直接报出来，
+不会因为后台窗口隐藏而丢失；需要完整堆栈时按 `start.ps1` 末尾提示在前台跑一次即可。

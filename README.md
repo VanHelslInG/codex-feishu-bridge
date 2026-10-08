@@ -18,8 +18,10 @@ codex app-server
 
 | 平台 | 状态 |
 | --- | --- |
-| Windows 11 | 已实现；单元与集成测试 41 项通过；已实测可拉起本机 `codex.exe app-server`、健康检查 `ok: true` |
+| Windows 11 | 已实现；单元与集成测试 41 项通过；`install/start/status/stop.ps1` 全链路实测通过（能拉起本机 `codex.exe app-server`，健康检查 `ok: true`，停止后进程树清干净） |
 | macOS | 代码路径已就绪（Keychain、launchd 模板、`install.sh`），**尚未在真机验证** |
+
+尚未验证的部分：与飞书真实 API 的联调（需要先按开通清单把自建应用建出来），以及 macOS 真机。
 
 首版范围是核心闭环：消息/图片输入、任务路由与队列、审批卡片、进度与中断、结果与图片回传、重启恢复。
 语音（STT/TTS）、通知传感器、Computer Use、多实例隔离**不在本版**。

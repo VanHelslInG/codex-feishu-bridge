@@ -28,15 +28,26 @@ if (Test-Path $pidFile) {
 
 $env:PYTHONPATH = Join-Path $root 'src'
 $env:CODEX_FEISHU_BRIDGE_HOME = $appDir
-$stdout = Join-Path $appDir 'bridge.out.log'
-$stderr = Join-Path $appDir 'bridge.err.log'
 
+# Preflight in the foreground so import errors (missing dependency, syntax
+# error) surface as a real traceback instead of disappearing into a hidden
+# process.
+Write-Host 'Preflight: importing the bridge'
+& $venvPython -c 'import feishu_bridge.bridge'
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'Preflight failed; fix the error above before starting the daemon.'
+    exit 1
+}
+
+# Deliberately launched WITHOUT -RedirectStandardOutput/-RedirectStandardError.
+# .NET passes bInheritHandles=TRUE whenever it redirects, which would leak this
+# shell's stdout pipe into the long-running daemon: any caller reading our
+# output (a pipeline, a CI job, another tool) would block until the bridge
+# exits. The bridge writes its own bridge.log, so nothing is lost.
 $process = Start-Process -FilePath $venvPython `
     -ArgumentList '-m', 'feishu_bridge.bridge', 'run' `
     -WorkingDirectory $root `
     -WindowStyle Hidden `
-    -RedirectStandardOutput $stdout `
-    -RedirectStandardError $stderr `
     -PassThru
 
 $process.Id | Set-Content -Path $pidFile -Encoding ASCII
@@ -48,7 +59,9 @@ while ((Get-Date) -lt $deadline) {
     if ($process.HasExited) {
         Write-Host 'Bridge exited during startup. Last 30 log lines:'
         Get-Content (Join-Path $appDir 'bridge.log') -Tail 30 -ErrorAction SilentlyContinue
-        Get-Content $stderr -Tail 30 -ErrorAction SilentlyContinue
+        Write-Host ''
+        Write-Host 'For a full traceback run it in the foreground:'
+        Write-Host "  `$env:PYTHONPATH='$(Join-Path $root 'src')'; & '$venvPython' -m feishu_bridge.bridge run --verbose"
         exit 1
     }
     try {
