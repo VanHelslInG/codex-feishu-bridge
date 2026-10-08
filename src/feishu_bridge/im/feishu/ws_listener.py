@@ -125,11 +125,17 @@ class WsListener:
             self.sink(payload)
         except Exception:
             logging.exception("Failed to normalise a card action event")
-        return (
-            P2CardActionTriggerResponse.builder()
-            .toast({"type": "info", "content": "已收到"})
-            .build()
-        )
+        # P2CardActionTriggerResponse exposes no builder: it hydrates from a
+        # plain dict. Returning a malformed response makes Feishu surface a
+        # callback error code (200671) to the user even though the action
+        # itself was handled, so a failure here must never escape.
+        try:
+            return P2CardActionTriggerResponse(
+                {"toast": {"type": "info", "content": "已收到"}}
+            )
+        except Exception:
+            logging.exception("Failed to build the card action acknowledgement")
+            return None
 
     # --- lifecycle -------------------------------------------------------
     def start(self) -> None:

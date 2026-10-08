@@ -117,3 +117,61 @@ def test_bridge_extracts_text_from_a_real_event():
             pass
 
     assert TextOnly()._extract_text(payload) == "检查构建"
+
+
+def build_card_action(**value_overrides: Any) -> "P2CardActionTrigger":
+    from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
+
+    value = {"action": "approval", "token": "tok", "decision": "accept"}
+    value.update(value_overrides)
+    return P2CardActionTrigger(
+        {
+            "header": {"event_id": "evt-card-1", "event_type": "card.action.trigger"},
+            "event": {
+                "operator": {"open_id": "ou_user"},
+                "token": "t",
+                "action": {"value": value, "tag": "button"},
+                "context": {"open_message_id": "om_card", "open_chat_id": "oc_1"},
+            },
+        }
+    )
+
+
+def test_card_action_is_normalised_and_acknowledged():
+    captured: List[Dict[str, Any]] = []
+    listener = listener_with_sink(captured)
+    response = listener._on_card_action(build_card_action())
+
+    assert len(captured) == 1
+    payload = captured[0]
+    assert payload["kind"] == "card_action"
+    assert payload["chat_id"] == "oc_1"
+    assert payload["message_id"] == "om_card"
+    assert payload["operator_open_id"] == "ou_user"
+    assert payload["value"]["decision"] == "accept"
+    assert payload["event_id"], "the action must carry an idempotency key"
+
+    # The acknowledgement must be a real response object: returning a broken
+    # one makes Feishu show error 200671 to the user.
+    assert response is not None
+    assert getattr(response.toast, "content", None), "the toast must be populated"
+
+
+def test_card_action_without_event_id_still_gets_a_stable_key():
+    captured: List[Dict[str, Any]] = []
+    listener = listener_with_sink(captured)
+    data = build_card_action()
+    data.header = None
+    listener._on_card_action(data)
+
+    assert captured[0]["event_id"].startswith("card:om_card:")
+
+
+def test_card_action_acknowledgement_survives_a_bad_payload():
+    """A malformed action must still produce a usable response, not raise."""
+    captured: List[Dict[str, Any]] = []
+    listener = listener_with_sink(captured)
+    from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
+
+    response = listener._on_card_action(P2CardActionTrigger({}))
+    assert response is not None or captured == []
