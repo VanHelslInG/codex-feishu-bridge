@@ -610,6 +610,10 @@ class Bridge:
             "approvalPolicy": self.config["approval_policy"],
             "serviceName": "feishu-bridge",
             "cwd": str(Path(cwd).expanduser()),
+            # The desktop app lists only threads it classifies as user
+            # conversations (`thread_source = "user"` in its state DB). Without
+            # this, bridge-created threads are indexed but never shown.
+            "threadSource": "user",
         }
         if model:
             params["model"] = model
@@ -845,6 +849,7 @@ class Bridge:
         params: Dict[str, Any] = {
             "approvalPolicy": self.config["approval_policy"],
             "serviceName": "feishu-recovered-task",
+            "threadSource": "user",
         }
         if queued["cwd"]:
             params["cwd"] = str(Path(queued["cwd"]).expanduser())
@@ -1772,7 +1777,9 @@ class Bridge:
         chat_id = ev["chat_id"]
         try:
             self.app.request("thread/compact/start", {"threadId": thread_id})
-            result = self.app.request("thread/fork", {"threadId": thread_id})
+            result = self.app.request(
+                "thread/fork", {"threadId": thread_id, "threadSource": "user"}
+            )
             fork = result.get("thread") or result
             new_thread_id = str(fork.get("id") or fork.get("threadId") or "")
             if not new_thread_id:
@@ -1790,7 +1797,9 @@ class Bridge:
             self._reply_plain(ev["chat_id"], "当前话题还没有绑定任务。", ev)
             return
         try:
-            result = self.app.request("thread/fork", {"threadId": thread_id})
+            result = self.app.request(
+                "thread/fork", {"threadId": thread_id, "threadSource": "user"}
+            )
             fork = result.get("thread") or result
             new_thread_id = str(fork.get("id") or fork.get("threadId") or "")
             if not new_thread_id:

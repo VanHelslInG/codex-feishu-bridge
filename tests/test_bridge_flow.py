@@ -142,6 +142,10 @@ def test_first_task_asks_for_a_model_then_starts(tmp_path):
 
     starts = app.called("thread/start")
     assert len(starts) == 1
+    assert starts[0].get("threadSource") == "user", (
+        "a thread the desktop app cannot classify as a user conversation is indexed "
+        "but never listed"
+    )
     turns = app.called("turn/start")
     assert len(turns) == 1
     assert turns[0]["model"] == "ark-code-latest"
