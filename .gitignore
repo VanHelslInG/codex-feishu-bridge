@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+state.sqlite3
+state.sqlite3-*
+bridge.log
+inbox/
+artifacts/
+config.json
+secrets.dat
+.pytest_cache/

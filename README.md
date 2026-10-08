@@ -1,0 +1,111 @@
+# Codex Feishu Bridge
+
+在飞书**话题形式群**里远程使用本机 Codex。一个飞书话题绑定一个 Codex 任务：同一任务内的消息按 FIFO 排队，不同任务并行运行。
+
+这是 `codex-telegram-bridge` 的飞书移植版：保留了它已经跑通的持久化与调度内核，把 Telegram 层换成飞书、把 macOS 层换成跨平台适配层。
+
+```text
+飞书话题群
+    ↕ 长连接 WebSocket（事件订阅）
+Codex Feishu Bridge  ──  SQLite WAL（真相源）
+    ↕ JSON-RPC over stdio
+codex app-server
+    ↕
+本机项目与终端
+```
+
+## 当前状态
+
+| 平台 | 状态 |
+| --- | --- |
+| Windows 11 | 已实现；单元与集成测试 41 项通过；已实测可拉起本机 `codex.exe app-server`、健康检查 `ok: true` |
+| macOS | 代码路径已就绪（Keychain、launchd 模板、`install.sh`），**尚未在真机验证** |
+
+首版范围是核心闭环：消息/图片输入、任务路由与队列、审批卡片、进度与中断、结果与图片回传、重启恢复。
+语音（STT/TTS）、通知传感器、Computer Use、多实例隔离**不在本版**。
+
+## 快速开始（Windows）
+
+1. 按 [docs/FEISHU-SETUP.md](docs/FEISHU-SETUP.md) 在飞书开放平台把自建应用开出来，拿到 App ID 与 App Secret。
+2. 安装与配置：
+
+```powershell
+cd D:\Codex\飞书codex机器人
+.\windows\install.ps1 -Prompt
+.\windows\start.ps1
+.\windows\status.ps1
+```
+
+3. 在飞书里把机器人拉进**话题形式群**，发送 `/bind <配对码>` 完成配对。配对码在启动日志里：
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\CodexFeishuBridge\bridge.log" -Tail 20
+```
+
+4. 在群里 `@机器人 <项目> <任务内容>`，机器人会自动建话题、建任务并开始执行。之后直接在该话题里发消息即可继续。
+
+停止：`.\windows\stop.ps1`（SQLite 状态与产物都会保留）。
+
+## 项目别名
+
+`config.json` 的 `projects` 决定 `/new` 和 `@机器人` 能选哪些目录，默认只有：
+
+```json
+{ "projects": { "codex": "D:\\Codex" } }
+```
+
+想加更多目录就改这里；`quick_start.project_keywords` 可以给项目配关键词，
+让「@机器人 修一下 FitTrack 的登录」这类模糊说法也能命中正确项目。
+
+## 指令
+
+```
+/bind <配对码>          把当前会话与 Bridge 配对
+/projects              查看项目别名
+/new [项目] [任务内容]   新建任务并绑定当前话题
+/tasks [关键词]         搜索最近的任务
+/use <任务 ID 前缀>      把当前话题切到某个任务
+/resume [任务 ID 前缀]   绑定到已有任务；不带参数时列出最近任务
+/status                当前话题的任务与队列
+/progress              立即查看执行进度（不占用队列）
+/where                 当前话题的路由与模型设置
+/models                列出可用模型
+/model <模型> [强度]     设置模型与推理强度
+/compact               压缩当前任务上下文
+/renew                 压缩后继承历史开新任务
+/fork                  分叉当前任务
+/clear                 在当前话题里开一个空白任务
+/rename [新标题]         修改当前话题标题
+/upload_revoke         撤销持续上传授权
+/stop                  中断当前正在执行的处理
+/cancel                取消进行中的选择
+/help                  帮助
+```
+
+## 模型
+
+默认不预设模型：第一个任务会弹模型选择卡片，选中后记住，之后可以直接干活。
+`/model` 随时可以换。要在配置里写死默认值就设置 `default_model` / `default_effort`。
+
+## 权限与安全
+
+- 首版按无人值守运行：`approval_policy = "never"`、沙箱 `dangerFullAccess`。
+  Codex 在正常执行时不会弹审批；只有外部工具自己要求授权时才会出现审批卡片。
+- App Secret 存在 Windows DPAPI 保险库（`%LOCALAPPDATA%\CodexFeishuBridge\secrets.dat`），
+  或 macOS 登录钥匙串；**不会写进 `config.json`，也不会进 Git**。
+- 只有通过 `/bind` 配对的会话、或 `feishu.allowlist` 里列出的会话/用户能下发任务。
+- 产物回传只允许 `artifact_roots`、当前项目目录和 Bridge 自己的 `artifacts/` 下的文件。
+
+## 开发
+
+```powershell
+# 解释器固定用 Codex 自带的那支；系统 python 是 Microsoft Store 占位符，不可用
+$py = "D:\Codex\飞书codex机器人\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "D:\Codex\飞书codex机器人\src"
+& $py -m pytest tests -q
+```
+
+日志与状态都在 `%LOCALAPPDATA%\CodexFeishuBridge`：`bridge.log`、`state.sqlite3`、`artifacts/`。
+
+设计细节见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，与 Telegram 版的差异对照见
+[docs/MIGRATION-FROM-TELEGRAM.md](docs/MIGRATION-FROM-TELEGRAM.md)。

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-feishu-bridge"
+version = "0.1.0"
+description = "Durable Feishu control plane for a local Codex app-server"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["lark-oapi>=1.7.0"]
+
+[project.scripts]
+feishu-bridge = "feishu_bridge.bridge:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

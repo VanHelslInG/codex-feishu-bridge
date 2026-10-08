@@ -1,0 +1,38 @@
+{
+  "codex_path": null,
+  "codex_home": null,
+  "instance": "default",
+  "health_host": "127.0.0.1",
+  "health_port": 49660,
+  "approval_policy": "never",
+  "sandbox_policy": "dangerFullAccess",
+  "default_model": null,
+  "default_effort": null,
+  "credential_service": "codex-feishu-bridge",
+  "credential_accounts": {
+    "app_id": "feishu-app-id",
+    "app_secret": "feishu-app-secret"
+  },
+  "artifact_roots": [],
+  "max_image_bytes": 20971520,
+  "max_file_bytes": 52428800,
+  "app_server_watchdog": {
+    "check_interval_seconds": 60,
+    "recycle_fd_threshold": 180,
+    "max_age_seconds": 86400
+  },
+  "quick_start": {
+    "project_keywords": {}
+  },
+  "projects": {
+    "codex": "D:\\Codex"
+  },
+  "feishu": {
+    "domain": "https://open.feishu.cn",
+    "require_mention_in_group": false,
+    "allowlist": {
+      "chat_ids": [],
+      "open_ids": []
+    }
+  }
+}
