@@ -1399,9 +1399,9 @@ class Bridge:
     def _forget_anchor(self, thread_id: Any, chat_id: str) -> None:
         if not thread_id:
             return
-        self.store.route_thread(
-            str(thread_id), chat_id, root_message_id=None, feishu_thread_id=None
-        )
+        # Drop only the delivery anchor: the Feishu thread id is how inbound
+        # messages in that topic still find this task, so it has to survive.
+        self.store.route_thread(str(thread_id), chat_id, root_message_id=None)
         self._notify_once(
             str(thread_id),
             "anchor",

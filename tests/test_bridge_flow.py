@@ -656,7 +656,9 @@ def test_withdrawn_topic_anchor_falls_back_to_a_plain_message(tmp_path):
     bridge._handle_message(message_event())
     drain(bridge)
     thread_id = str(store.binding("oc_1")["current_thread_id"])
-    store.route_thread(thread_id, "oc_1", root_message_id="om_root")
+    store.route_thread(
+        thread_id, "oc_1", root_message_id="om_root", feishu_thread_id="omt_keep"
+    )
     im.anchor_error = "reply message failed: code=230011 msg=The message was withdrawn."
 
     bridge._send_text("oc_1", "这是任务结果", thread_id=thread_id)
@@ -666,5 +668,8 @@ def test_withdrawn_topic_anchor_falls_back_to_a_plain_message(tmp_path):
         "the answer must be posted into the chat when the topic anchor is gone"
     )
     assert store.route(thread_id)["root_message_id"] is None
+    assert store.route(thread_id)["feishu_thread_id"] == "omt_keep", (
+        "topic routing must survive losing the delivery anchor"
+    )
     assert any("起始消息被撤回" in str(payload) for _, payload in im.sent)
     store.close()
