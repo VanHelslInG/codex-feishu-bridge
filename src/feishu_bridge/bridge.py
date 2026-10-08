@@ -281,6 +281,15 @@ class Bridge:
             return
         text = self._extract_text(ev)
         command = commands.parse(text) if text else None
+        # Healthy traffic used to be completely silent, which made a real
+        # incident impossible to read back from the log.
+        LOG.info(
+            "Message %s type=%s chat=%s thread=%s",
+            ev.get("message_id"),
+            ev.get("msg_type") or "-",
+            chat_id,
+            ev.get("thread_id") or "-",
+        )
 
         if command and command.name == "bind":
             self._handle_bind(chat_id, open_id, command.rest)
@@ -360,6 +369,7 @@ class Bridge:
                 payload = json.loads(ev.get("content") or "{}")
                 image_key = str(payload.get("image_key") or "")
                 path = self.im.download_resource(ev["message_id"], image_key, "image")
+                LOG.info("Downloaded inbound image %s to %s", image_key, path)
                 inputs.append({"type": "localImage", "path": str(path)})
             except Exception:
                 LOG.exception("Failed to download an inbound image")
@@ -454,9 +464,30 @@ class Bridge:
 
     def _model_choice(self, chat_id: str) -> Tuple[Optional[str], Optional[str]]:
         binding = self.store.binding(chat_id)
-        model = (binding["current_model"] if binding else None) or self.config.get("default_model")
-        effort = (binding["current_effort"] if binding else None) or self.config.get("default_effort")
+        # A chat can be authorized by the allowlist without ever running
+        # /bind, and update_binding only touches an existing row — so the
+        # per-binding columns are silently unusable there. Settings are the
+        # durable home for the choice; the binding is read for older rows.
+        model = (
+            (binding["current_model"] if binding else None)
+            or self.store.get_setting(f"chat_model:{chat_id}", "")
+            or self.config.get("default_model")
+        )
+        effort = (
+            (binding["current_effort"] if binding else None)
+            or self.store.get_setting(f"chat_effort:{chat_id}", "")
+            or self.config.get("default_effort")
+        )
         return model, effort
+
+    def _remember_model(
+        self, chat_id: str, model: str, effort: Optional[str] = None
+    ) -> None:
+        self.store.set_setting(f"chat_model:{chat_id}", model or "")
+        if effort is not None:
+            self.store.set_setting(f"chat_effort:{chat_id}", effort or "")
+        if self.store.binding(chat_id):
+            self.store.update_binding(chat_id, current_model=model, current_effort=effort)
 
     def _start_quick_task(
         self, ev: Dict[str, Any], inputs: List[Dict[str, Any]], text: str
@@ -635,6 +666,12 @@ class Bridge:
         if not created:
             self._send_text(chat_id, "这条消息已经收到，不会重复提交。", ev)
             return
+        LOG.info(
+            "Queued turn %s on thread %s from message %s",
+            row["id"],
+            thread_id,
+            source_message_id,
+        )
         self.store.route_thread(thread_id, chat_id)
         self.store.map_message(chat_id, source_message_id, thread_id)
         self.store.enqueue_outbox(
@@ -1551,7 +1588,7 @@ class Bridge:
         parts = rest.split()
         model = parts[0]
         effort = parts[1] if len(parts) > 1 else None
-        self.store.update_binding(chat_id, current_model=model, current_effort=effort)
+        self._remember_model(chat_id, model, effort)
         self._reply_plain(
             chat_id, f"已设置：模型 `{model}`，推理强度 `{effort or '默认'}`。", ev
         )
@@ -1836,7 +1873,7 @@ class Bridge:
         model = str(value.get("model") or "")
         token = str(value.get("thread") or "")
         if model:
-            self.store.update_binding(chat_id, current_model=model)
+            self._remember_model(chat_id, model)
         draft = self._load_draft(token)
         if draft:
             draft["model"] = model

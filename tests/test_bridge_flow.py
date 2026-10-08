@@ -673,3 +673,50 @@ def test_withdrawn_topic_anchor_falls_back_to_a_plain_message(tmp_path):
     )
     assert any("起始消息被撤回" in str(payload) for _, payload in im.sent)
     store.close()
+
+
+def test_model_choice_persists_in_an_allowlisted_chat_without_a_binding(tmp_path):
+    """An allowlisted chat is never /bind'ed, so it has no binding row to update."""
+    bridge, store, im, app = build(
+        tmp_path, feishu={"allowlist": {"open_ids": ["ou_1"], "chat_ids": []}}
+    )
+    assert store.binding("oc_1") is None
+
+    def pickers() -> int:
+        cards = [payload for _, payload in im.sent]
+        cards += [payload for _, _, payload in im.replies]
+        return sum(
+            1
+            for card in cards
+            if isinstance(card, dict) and "选择模型" in json.dumps(card, ensure_ascii=False)
+        )
+
+    bridge._handle_message(message_event())
+    drain(bridge)
+    assert pickers() == 1, "the first task still asks once"
+
+    token = draft_token(store)
+    bridge._handle_card_action(
+        {
+            "kind": "card_action",
+            "event_id": "card-model",
+            "chat_id": "oc_1",
+            "operator_open_id": "ou_1",
+            "message_id": "om_card",
+            "value": {"action": "model", "model": "ark-code-latest", "thread": token},
+        }
+    )
+    drain(bridge)
+    assert store.binding("oc_1") is None, "remembering a model must not imply authority"
+    assert store.get_setting("chat_model:oc_1") == "ark-code-latest"
+
+    bridge._handle_message(message_event(message_id="om_102", event_id="evt-3"))
+    drain(bridge)
+    # Counting matters: the first card stays in the history, so a plain
+    # "is there a picker" check can never fail here.
+    assert pickers() == 1, "the second task must not ask again"
+    latest = store.db.execute(
+        "SELECT model FROM queued_turns ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert latest["model"] == "ark-code-latest"
+    store.close()
