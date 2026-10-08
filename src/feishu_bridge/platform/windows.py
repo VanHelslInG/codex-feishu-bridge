@@ -6,12 +6,14 @@ import base64
 import ctypes
 import json
 import os
+import re
 import subprocess
 from ctypes import wintypes
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .base import Platform
+from .base import CodexNotFound, Platform
+from ..core.config import app_dir
 
 
 class _DataBlob(ctypes.Structure):
@@ -27,7 +29,7 @@ class WindowsPlatform(Platform):
     name = "windows"
 
     def __init__(self) -> None:
-        self._vault = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "CodexFeishuBridge"
+        self._vault = app_dir()
 
     # --- secret storage (DPAPI, per Windows user) ------------------------
     def _vault_path(self) -> Path:
@@ -116,9 +118,77 @@ class WindowsPlatform(Platform):
             candidate = Path(str(configured)).expanduser()
             if candidate.exists():
                 return str(candidate)
-            return str(configured)
-        found = _which("codex.exe") or _which("codex")
-        return found or "codex.exe"
+            raise CodexNotFound(
+                f"config.json sets codex_path = {configured!r}, but that file does "
+                "not exist. Correct the path or remove the key to auto-detect."
+            )
+
+        searched: List[str] = []
+        for name in ("codex.exe", "codex.cmd", "codex"):
+            found = _which(name)
+            if found:
+                return found
+        searched.append("PATH (codex.exe / codex.cmd / codex)")
+
+        found = self._desktop_app_codex()
+        if found:
+            return found
+        searched.append(f"{self._desktop_bin_dir()} (newest codex.exe in a bin subdirectory)")
+
+        found = self._config_toml_codex()
+        if found:
+            return found
+        searched.append(f"{self._codex_config_toml()} (key CODEX_CLI_PATH)")
+
+        raise CodexNotFound(
+            "could not locate the Codex CLI, so the bridge cannot start its "
+            "app-server. Searched: " + "; ".join(searched) + ". "
+            "Set codex_path in config.json to the full path of codex.exe."
+        )
+
+    # --- Codex CLI discovery --------------------------------------------
+    def _desktop_bin_dir(self) -> Path:
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "OpenAI" / "Codex" / "bin"
+
+    def _desktop_app_codex(self) -> Optional[str]:
+        """Newest codex.exe under the Codex desktop app's versioned bin dirs.
+
+        The desktop app installs into a hash-named directory that changes on
+        every update, so the directory name must never be hard-coded.
+        """
+        root = self._desktop_bin_dir()
+        if not root.is_dir():
+            return None
+        candidates = [path for path in root.glob("*/codex.exe") if path.is_file()]
+        if not candidates:
+            return None
+        return str(max(candidates, key=lambda path: path.stat().st_mtime))
+
+    def _codex_config_toml(self) -> Path:
+        home = os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")
+        return Path(home) / "config.toml"
+
+    def _config_toml_codex(self) -> Optional[str]:
+        """Last resort: the desktop client's own recorded CLI path.
+
+        Read-only and best-effort on purpose: that file belongs to the Codex
+        desktop app, so neither its format nor its presence is guaranteed.
+        """
+        path = self._codex_config_toml()
+        if not path.is_file():
+            return None
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        match = re.search(
+            r"""^\s*CODEX_CLI_PATH\s*=\s*['"]([^'"]+)['"]""", text, re.MULTILINE
+        )
+        if not match:
+            return None
+        candidate = Path(match.group(1))
+        return str(candidate) if candidate.is_file() else None
 
     def fd_count(self, pid: int) -> Optional[int]:
         # Windows has no lsof equivalent in the base image; the age-based

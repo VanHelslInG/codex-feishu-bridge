@@ -5,7 +5,8 @@
 [CmdletBinding()]
 param()
 
-$appDir = Join-Path $env:LOCALAPPDATA 'CodexFeishuBridge'
+. (Join-Path $PSScriptRoot 'lib\appdir.ps1')
+$appDir = Get-BridgeAppDir
 $configPath = Join-Path $appDir 'config.json'
 $pidFile = Join-Path $appDir 'bridge.pid'
 

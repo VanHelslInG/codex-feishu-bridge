@@ -14,7 +14,8 @@ if (-not (Test-Path $venvPython)) {
     throw 'Virtualenv missing. Run .\install.ps1 first.'
 }
 
-$appDir = Join-Path $env:LOCALAPPDATA 'CodexFeishuBridge'
+. (Join-Path $PSScriptRoot 'lib\appdir.ps1')
+$appDir = Get-BridgeAppDir
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 $pidFile = Join-Path $appDir 'bridge.pid'
 
@@ -28,6 +29,19 @@ if (Test-Path $pidFile) {
 
 $env:PYTHONPATH = Join-Path $root 'src'
 $env:CODEX_FEISHU_BRIDGE_HOME = $appDir
+
+# The port must be readable even when config.json has never been written: a
+# missing file used to make every probe throw, which the wait loop then read as
+# "still starting" until it timed out on a perfectly healthy bridge.
+$configPath = Join-Path $appDir 'config.json'
+$port = 49660
+if (Test-Path -LiteralPath $configPath) {
+    try {
+        $port = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).health_port
+    } catch {
+        Write-Warning "Could not read the health port from $configPath; using $port"
+    }
+}
 
 # Preflight in the foreground so import errors (missing dependency, syntax
 # error) surface as a real traceback instead of disappearing into a hidden
@@ -65,7 +79,7 @@ while ((Get-Date) -lt $deadline) {
         exit 1
     }
     try {
-        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$((Get-Content (Join-Path $appDir 'config.json') -Raw | ConvertFrom-Json).health_port)/" -TimeoutSec 3
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/" -TimeoutSec 3
         if ($health.ok) {
             Write-Host 'Health check: ok'
             exit 0
@@ -74,5 +88,5 @@ while ((Get-Date) -lt $deadline) {
         # still starting
     }
 }
-Write-Host 'Health check did not become ready in time; check bridge.log'
+Write-Host "Health check did not become ready in time on port $port; check bridge.log"
 exit 1

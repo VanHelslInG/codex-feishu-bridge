@@ -96,7 +96,7 @@ cd D:\Codex\飞书codex机器人
 
 - 首版按无人值守运行：`approval_policy = "never"`、沙箱 `dangerFullAccess`。
   Codex 在正常执行时不会弹审批；只有外部工具自己要求授权时才会出现审批卡片。
-- App Secret 存在 Windows DPAPI 保险库（`%LOCALAPPDATA%\CodexFeishuBridge\secrets.dat`），
+- App Secret 存在 Windows DPAPI 保险库（`D:\Codex\CodexFeishuBridge\secrets.dat`），
   或 macOS 登录钥匙串；**不会写进 `config.json`，也不会进 Git**。
 - 只有通过 `/bind` 配对的会话、或 `feishu.allowlist` 里列出的会话/用户能下发任务。
 - 产物回传只允许 `artifact_roots`、当前项目目录和 Bridge 自己的 `artifacts/` 下的文件。
@@ -110,7 +110,9 @@ $env:PYTHONPATH = "D:\Codex\飞书codex机器人\src"
 & $py -m pytest tests -q
 ```
 
-日志与状态都在 `%LOCALAPPDATA%\CodexFeishuBridge`：`bridge.log`、`state.sqlite3`、`artifacts/`。
+日志与状态都在应用目录：Windows 上默认 `D:\Codex\CodexFeishuBridge`（`bridge.log`、
+`state.sqlite3`、`inbox/`、`artifacts/`），没有 D: 盘时回退 `%LOCALAPPDATA%\CodexFeishuBridge`。
+用 `CODEX_FEISHU_BRIDGE_HOME` 可以覆盖；已经装在系统盘上的用 `windows\move-appdir.ps1` 搬过来。
 
 设计细节见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，与 Telegram 版的差异对照见
 [docs/MIGRATION-FROM-TELEGRAM.md](docs/MIGRATION-FROM-TELEGRAM.md)。

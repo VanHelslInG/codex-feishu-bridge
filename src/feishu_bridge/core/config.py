@@ -58,9 +58,20 @@ def app_dir() -> Path:
     if override:
         return Path(override).expanduser()
     if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "CodexFeishuBridge"
+        return _windows_parent() / "CodexFeishuBridge"
     return Path.home() / "Library" / "Application Support" / "CodexFeishuBridge"
+
+
+def _windows_parent() -> Path:
+    """Directory the app dir hangs off on Windows.
+
+    State, logs and downloaded images stay off the system drive: when a D:
+    drive exists the app directory lives in ``D:\\Codex``, otherwise it falls
+    back to ``%LOCALAPPDATA%``.
+    """
+    if Path("D:/").exists():
+        return Path("D:/Codex")
+    return Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
 
 
 def merge_defaults(raw: Dict[str, Any]) -> Dict[str, Any]:

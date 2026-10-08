@@ -40,7 +40,7 @@ from .im.feishu.cards import (
 from .im.feishu.client import FeishuClient
 from .im.feishu.render import card as render_card
 from .im.feishu.render import markdown_elements, sanitize, text_card
-from .platform.base import Platform, current_platform
+from .platform.base import CodexNotFound, Platform, current_platform
 
 LOG = logging.getLogger("feishu_bridge")
 
@@ -2041,14 +2041,18 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     configure_logging(base / "bridge.log", args.verbose)
     platform = current_platform()
-    store = Store(base / "state.sqlite3")
     app_events: "queue.Queue[Dict[str, Any]]" = queue.Queue()
-    app = AppServer(
-        platform.resolve_codex_path(config.get("codex_path")),
-        app_events,
-        codex_home(config),
-        platform,
-    )
+    # Resolve the CLI before touching any state: a missing executable is an
+    # operator error and must read as one, not as a spawn traceback.
+    try:
+        codex_path = platform.resolve_codex_path(config.get("codex_path"))
+    except CodexNotFound as exc:
+        LOG.error("Cannot start the bridge: %s", exc)
+        print(f"Cannot start the bridge: {exc}", file=sys.stderr)
+        return 2
+    LOG.info("Using Codex CLI at %s", codex_path)
+    store = Store(base / "state.sqlite3")
+    app = AppServer(codex_path, app_events, codex_home(config), platform)
     app_id = platform.secret_get(
         config["credential_service"], config["credential_accounts"]["app_id"]
     ) or os.environ.get("FEISHU_APP_ID")

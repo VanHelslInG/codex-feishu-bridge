@@ -94,7 +94,7 @@ Feishu App Secret:  ← 粘贴密钥，回车
 
 两个值都在开放平台「你的应用 → 凭证与基础信息」里。
 **输入 App Secret 时屏幕上不会显示任何字符**，这是正常的，粘贴完直接回车即可。
-密钥会被 DPAPI 加密后存到 `%LOCALAPPDATA%\CodexFeishuBridge\secrets.dat`，不会写进配置文件。
+密钥会被 DPAPI 加密后存到应用目录（默认 `D:\Codex\CodexFeishuBridge\secrets.dat`）下的 `secrets.dat`，不会写进配置文件。
 
 看到 `credentials stored` 和 `Installed.` 就算完成。
 
@@ -148,7 +148,7 @@ Health check: ok
 | --- | --- |
 | `Feishu App Secret:` 那里没反应 | 正常：安全输入不回显，粘贴后回车即可 |
 | 提示 `Virtualenv missing` | 先跑 `.\windows\install.ps1`（不带 `-Prompt` 也行） |
-| `Health check` 一直不就绪 | 看 `%LOCALAPPDATA%\CodexFeishuBridge\bridge.log` 尾部报错 |
+| `Health check` 一直不就绪 | 看应用目录下 `bridge.log` 的尾部报错（默认 `D:\Codex\CodexFeishuBridge`） |
 | 群里发 `/bind` 机器人没反应 | 敏感权限未批时必须 `@机器人 /bind …` |
 | 机器人回「配对码不正确」 | 码已经被用过一次，重新 `.\windows\pair-code.ps1` 取新的 |
 
@@ -162,6 +162,7 @@ Health check: ok
 | 卡片按钮点了没反应 | 回调订阅里是否加了 `card.action.trigger` |
 | 任务创建失败 | 日志里搜 `thread/start`；确认 `projects` 里的目录真实存在 |
 
-日志位置：`%LOCALAPPDATA%\CodexFeishuBridge\bridge.log`。
+日志位置：应用目录下的 `bridge.log`，默认 `D:\Codex\CodexFeishuBridge\bridge.log`
+（`CODEX_FEISHU_BRIDGE_HOME` 可覆盖；已经装在系统盘的用 `windows\move-appdir.ps1` 搬走）。
 启动脚本会先做一次前台导入预检，所以依赖缺失这类错误会在终端直接报出来，
 不会因为后台窗口隐藏而丢失；需要完整堆栈时按 `start.ps1` 末尾提示在前台跑一次即可。

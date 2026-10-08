@@ -16,7 +16,8 @@ if (-not (Test-Path $venvPython)) {
     throw 'Virtualenv missing. Run .\install.ps1 first.'
 }
 
-$appDir = Join-Path $env:LOCALAPPDATA 'CodexFeishuBridge'
+. (Join-Path $PSScriptRoot 'lib\appdir.ps1')
+$appDir = Get-BridgeAppDir
 $env:PYTHONPATH = Join-Path $root 'src'
 $env:CODEX_FEISHU_BRIDGE_HOME = $appDir
 

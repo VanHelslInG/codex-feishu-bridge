@@ -37,7 +37,8 @@ Write-Host 'Installing dependencies'
 & $venvPython -m pip install --quiet --upgrade pip
 & $venvPython -m pip install --quiet -r (Join-Path $root 'requirements.txt')
 
-$appDir = Join-Path $env:LOCALAPPDATA 'CodexFeishuBridge'
+. (Join-Path $PSScriptRoot 'lib\appdir.ps1')
+$appDir = Get-BridgeAppDir
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 $configPath = Join-Path $appDir 'config.json'
 

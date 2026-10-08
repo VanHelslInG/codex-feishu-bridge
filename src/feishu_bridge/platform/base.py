@@ -6,9 +6,18 @@ so the core and the IM layer stay portable.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+
+class CodexNotFound(RuntimeError):
+    """No usable Codex executable could be located.
+
+    Raised before any process is spawned so the operator sees which locations
+    were searched instead of a bare ``FileNotFoundError [WinError 2]``.
+    """
 
 
 class Platform:
@@ -47,14 +56,22 @@ class Platform:
 
     # --- environment ----------------------------------------------------
     def resolve_codex_path(self, configured: Optional[str]) -> str:
+        """Locate the Codex CLI, or explain why it could not be found."""
         if configured:
             candidate = Path(str(configured)).expanduser()
             if candidate.exists():
                 return str(candidate)
-            return str(configured)
-        if self.name == "windows":
-            return "codex.exe"
-        return "codex"
+            raise CodexNotFound(
+                f"config.json sets codex_path = {configured!r}, but that file does "
+                "not exist. Correct the path or remove the key to auto-detect."
+            )
+        found = shutil.which("codex.exe") or shutil.which("codex")
+        if found:
+            return found
+        raise CodexNotFound(
+            "could not find the Codex CLI. Searched PATH for 'codex.exe' and "
+            "'codex'. Set codex_path in config.json to the full path."
+        )
 
     def fd_count(self, pid: int) -> Optional[int]:
         """Best-effort count of open descriptors for the app-server."""

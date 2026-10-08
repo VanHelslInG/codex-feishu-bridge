@@ -6,7 +6,8 @@
 param()
 
 $ErrorActionPreference = 'Stop'
-$appDir = Join-Path $env:LOCALAPPDATA 'CodexFeishuBridge'
+. (Join-Path $PSScriptRoot 'lib\appdir.ps1')
+$appDir = Get-BridgeAppDir
 $pidFile = Join-Path $appDir 'bridge.pid'
 
 if (-not (Test-Path $pidFile)) {
