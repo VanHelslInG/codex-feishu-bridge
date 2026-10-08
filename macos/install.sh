@@ -27,4 +27,9 @@ if [ -n "${FEISHU_APP_ID:-}" ] && [ -n "${FEISHU_APP_SECRET:-}" ]; then
     echo "Credentials stored in the login Keychain"
 fi
 
-echo "Installed. Start with: $VENV/bin/python -m feishu_bridge.bridge run"
+chmod +x "$ROOT/macos/bridge-agent.sh"
+
+echo "Installed."
+echo "Start by hand with : $VENV/bin/python -m feishu_bridge.bridge run"
+echo "Or install the agent: $ROOT/macos/bridge-agent.sh \"$VENV/bin/python\" \"$ROOT\""
+echo "The agent starts the bridge only while the Codex desktop app is open."

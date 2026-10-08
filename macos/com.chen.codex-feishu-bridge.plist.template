@@ -6,10 +6,10 @@
   <string>com.chen.codex-feishu-bridge</string>
   <key>ProgramArguments</key>
   <array>
+    <string>/bin/bash</string>
+    <string>__ROOT__/macos/bridge-agent.sh</string>
     <string>__VENV__/bin/python</string>
-    <string>-m</string>
-    <string>feishu_bridge.bridge</string>
-    <string>run</string>
+    <string>__ROOT__</string>
   </array>
   <key>WorkingDirectory</key>
   <string>__ROOT__</string>
@@ -22,10 +22,10 @@
     <key>PATH</key>
     <string>__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
+  <!-- Deliberately not RunAtLoad/KeepAlive: the agent polls instead, and
+       bridge-agent.sh only starts the bridge while Codex itself is open. -->
+  <key>StartInterval</key>
+  <integer>120</integer>
   <key>SoftResourceLimits</key>
   <dict>
     <key>NumberOfFiles</key>

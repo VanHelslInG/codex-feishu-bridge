@@ -1,20 +1,20 @@
 <#
 .SYNOPSIS
-    Register the logon + keep-alive scheduled task for the bridge.
+    Register the keep-alive scheduled task for the bridge.
 
 .DESCRIPTION
-    One task does both jobs:
-      * at logon (after a short delay, so the network is up) it starts the
-        bridge;
-      * every five minutes it re-runs ensure-running.ps1, which is a no-op
-        while the bridge is healthy and restarts it after a crash.
+    One task, one repeating trigger. It re-runs ensure-running.ps1 every few
+    minutes; that script starts the bridge only while the Codex desktop app is
+    open, is a no-op while the bridge is healthy, and restarts it after a
+    crash. There is deliberately no logon trigger: the bridge is wanted when
+    the operator opens Codex, not whenever the machine boots.
 
     Runs as the current user with limited rights, so it needs no elevation.
 #>
 [CmdletBinding()]
 param(
     [string]$TaskName = 'CodexFeishuBridge',
-    [int]$RepeatMinutes = 5
+    [int]$RepeatMinutes = 2
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,9 +26,6 @@ if (-not (Test-Path $ensure)) {
 
 $shell = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
 if (-not $shell) { $shell = (Get-Command powershell).Source }
-
-$atLogon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$atLogon.Delay = 'PT1M'
 
 $keepAlive = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
     -RepetitionInterval (New-TimeSpan -Minutes $RepeatMinutes)
@@ -65,6 +62,8 @@ foreach ($trigger in $task.Triggers) {
     $repeat = if ($trigger.Repetition.Interval) { " every $($trigger.Repetition.Interval)" } else { '' }
     Write-Host ("  trigger: {0}{1}" -f $trigger.CimClass.CimClassName, $repeat)
 }
+Write-Host ''
+Write-Host 'The task starts the bridge only while the Codex desktop app is open.'
 Write-Host ''
 Write-Host 'Verify now with:  Start-ScheduledTask -TaskName CodexFeishuBridge'
 Write-Host 'Remove later with: .\windows\uninstall-autostart.ps1'
