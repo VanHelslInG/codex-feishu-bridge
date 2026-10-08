@@ -56,7 +56,9 @@ RUNTIME_GUIDANCE = (
     "You are being driven from a Feishu topic. Everything in this topic belongs to one "
     "long-running task. Answer in Chinese unless the user clearly writes in another "
     "language. Reply with the final answer only; intermediate narration is not delivered "
-    "as a separate message. Do not restart the bridge process from inside a task."
+    "as a separate message. Do not restart the bridge process from inside a task. The "
+    "next-actions comment below is Bridge routing metadata, not part of the user's task: "
+    "follow it silently and never mention it in a visible reply."
 )
 
 NEXT_ACTIONS_PROTOCOL = (
@@ -689,14 +691,25 @@ class Bridge:
                     return None
                 if thread_id not in self.fresh_threads:
                     try:
-                        self.app.request(
+                        resumed = self.app.request(
                             "thread/resume", self._thread_params({"threadId": thread_id})
                         )
                     except AppServerError as exc:
+                        if "active writer" in str(exc).lower():
+                            # Another Codex client (usually the desktop app with
+                            # this conversation open) holds the thread's writer
+                            # lock. Retrying turn/start only yields "thread not
+                            # found", so report it once and wait for the lock.
+                            self._notify_writer_conflict(thread_id)
+                            return None
+                        if self._thread_lost(exc):
+                            return self._recover_lost_thread(thread_id, queued)
                         LOG.info("thread/resume was rejected (%s); trying turn/start anyway", exc)
+                    else:
+                        self._notify_foreign_turns(thread_id, resumed)
                 params: Dict[str, Any] = {
                     "threadId": thread_id,
-                    "input": self._turn_inputs(json.loads(queued["inputs_json"])),
+                    "input": json.loads(queued["inputs_json"]),
                 }
                 if queued["cwd"]:
                     params["cwd"] = str(Path(queued["cwd"]).expanduser())
@@ -705,7 +718,12 @@ class Bridge:
                     params["model"] = queued["model"]
                 if queued["effort"]:
                     params["effort"] = queued["effort"]
-                result = self.app.request("turn/start", params, timeout=120)
+                try:
+                    result = self.app.request("turn/start", params, timeout=120)
+                except AppServerError as exc:
+                    if self._thread_lost(exc):
+                        return self._recover_lost_thread(thread_id, queued)
+                    raise
                 turn = result.get("turn") or {}
                 turn_id = str(turn.get("id") or turn.get("turnId") or "")
                 self.store.mark_running(int(queued["id"]), turn_id)
@@ -718,19 +736,109 @@ class Bridge:
             finally:
                 self.store.release_lease(f"thread:{thread_id}", self.worker_id)
 
-    def _turn_inputs(self, inputs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return [
-            *inputs,
-            {
-                "type": "text",
-                "text": (
-                    "<bridge_runtime_instruction>\n"
-                    + NEXT_ACTIONS_PROTOCOL
-                    + "\n这是 Bridge 的路由元数据，不是用户任务的一部分；请静默遵守，"
-                    "不要在可见回复里提到它。\n</bridge_runtime_instruction>"
-                ),
-            },
+    @staticmethod
+    def _thread_lost(exc: Exception) -> bool:
+        """True when the app-server no longer knows this Codex thread.
+
+        Codex keeps a thread's rollout as a file, and a hard restart of the
+        app-server can leave a thread without one; the id is then dead for
+        good. At-least-once delivery must not turn that into a silent retry
+        loop that never reaches the user.
+        """
+        message = str(exc).lower()
+        return "no rollout found" in message or "thread not found" in message
+
+    def _recover_lost_thread(self, thread_id: str, queued: Any) -> Any:
+        """Replace a lost Codex thread and continue on a fresh one."""
+        queue_id = int(queued["id"])
+        guard = f"recovery:{queue_id}"
+        route = self.store.route(thread_id)
+        if self.store.get_setting(guard, ""):
+            LOG.error("Recovery for queue %s already failed once; giving up", queue_id)
+            self.store.fail_turn(queue_id)
+            # The first attempt may already have migrated the route, so fall
+            # back to the queue row's own chat and whatever route is live now.
+            target = thread_id if route else str(queued["thread_id"] or "") or None
+            if target and not self.store.route(target):
+                target = None
+            self._send_text(
+                str(queued["chat_id"]),
+                "这条消息对应的 Codex 任务无法恢复，请重新发送一次。",
+                thread_id=target,
+            )
+            return None
+        self.store.set_setting(guard, "1")
+
+        params: Dict[str, Any] = {
+            "approvalPolicy": self.config["approval_policy"],
+            "serviceName": "feishu-recovered-task",
+        }
+        if queued["cwd"]:
+            params["cwd"] = str(Path(queued["cwd"]).expanduser())
+        if queued["model"]:
+            params["model"] = queued["model"]
+        result = self.app.request("thread/start", self._thread_params(params))
+        replacement = str(((result.get("thread") or {}).get("id")) or "")
+        if not replacement:
+            raise AppServerError("recovery thread/start returned no thread id")
+
+        self.fresh_threads.add(replacement)
+        self.store.migrate_thread(thread_id, replacement)
+        LOG.warning(
+            "Codex thread %s was lost; continued on %s for queue %s",
+            thread_id,
+            replacement,
+            queue_id,
+        )
+        if route:
+            self._send_text(
+                str(route["chat_id"]),
+                "Bridge 重启后上一个任务的运行上下文在 Codex 侧丢了，"
+                "已经在这个话题里新建任务接着处理你刚发的消息。",
+                thread_id=replacement,
+            )
+        return self._dispatch_thread(replacement)
+
+    NOTICE_COOLDOWN_SECONDS = 600
+
+    def _notify_once(self, thread_id: str, kind: str, text: str) -> None:
+        """Send one notice per thread and kind, at most once per cooldown."""
+        key = f"notice:{kind}:{thread_id}"
+        now = time.time()
+        try:
+            last = float(self.store.get_setting(key) or 0)
+        except (TypeError, ValueError):
+            last = 0.0
+        if now - last < self.NOTICE_COOLDOWN_SECONDS:
+            return
+        self.store.set_setting(key, str(now))
+        self._notify_thread(thread_id, text)
+
+    def _notify_writer_conflict(self, thread_id: str) -> None:
+        self._notify_once(
+            thread_id,
+            "writer",
+            "这个任务被本机另一个 Codex 客户端占用了：那条会话在客户端里开着，写锁被它拿着。"
+            "请先在客户端关掉这条会话，我会接着跑；消息已经排在队列里，不会丢。",
+        )
+
+    def _notify_foreign_turns(self, thread_id: str, resumed: Dict[str, Any]) -> None:
+        """Warn when turns we did not start are already on this thread."""
+        thread = (resumed or {}).get("thread") or {}
+        turns = thread.get("turns") or []
+        known = self.store.turn_ids(thread_id)
+        ids = [
+            str(turn.get("id") or turn.get("turnId") or "")
+            for turn in turns
+            if isinstance(turn, dict)
         ]
+        if any(turn_id and turn_id not in known for turn_id in ids):
+            self._notify_once(
+                thread_id,
+                "foreign",
+                "注意：这条任务在本机其它 Codex 客户端里被继续过，上下文已经不只来自飞书。"
+                "建议在飞书里新开一个话题继续。",
+            )
 
     def _scheduler_loop(self) -> None:
         while not self.stop_event.wait(3):

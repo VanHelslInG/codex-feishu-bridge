@@ -193,6 +193,138 @@ def test_explicit_model_in_config_skips_the_picker(tmp_path):
     store.close()
 
 
+def texts(im: FakeIm) -> List[str]:
+    result = [str(payload) for _, payload in im.sent]
+    result += [str(payload) for _, _, payload in im.replies]
+    return result
+
+
+def start_first_task(bridge: Bridge, store: Store, im: FakeIm) -> str:
+    """Create the task and return its Codex thread id."""
+    bind(bridge, store)
+    bridge._handle_message(message_event())
+    drain(bridge)
+    token = draft_token(store)
+    bridge._handle_card_action(
+        {
+            "kind": "card_action",
+            "event_id": "card-1",
+            "chat_id": "oc_1",
+            "operator_open_id": "ou_1",
+            "message_id": "om_card",
+            "value": {"action": "model", "model": "ark-code-latest", "thread": token},
+        }
+    )
+    drain(bridge)
+    thread_id = str(store.binding("oc_1")["current_thread_id"])
+    # The fake never emits turn/completed, so close the first turn by hand —
+    # otherwise the thread still looks busy and later dispatches are skipped.
+    store.finish_running(thread_id, "turn_1")
+    return thread_id
+
+
+def test_turn_input_carries_no_bridge_protocol(tmp_path):
+    bridge, store, im, app = build(tmp_path)
+    start_first_task(bridge, store, im)
+
+    starts = app.called("thread/start")
+    assert starts and "BRIDGE_NEXT_ACTIONS" in str(starts[0]["developerInstructions"])
+    turns = app.called("turn/start")
+    assert len(turns) == 1
+    payload = json.dumps(turns[0]["input"], ensure_ascii=False)
+    # The protocol lives in developerInstructions; a second copy in the user
+    # message is what used to leak into the thread title.
+    assert "bridge_runtime_instruction" not in payload
+    assert "检查构建" in payload
+    store.close()
+
+
+def test_writer_conflict_is_reported_once(tmp_path):
+    bridge, store, im, app = build(tmp_path)
+    thread_id = start_first_task(bridge, store, im)
+    app.resume_error = f"thread {thread_id} already has an active writer"
+    bridge.fresh_threads.clear()  # what a bridge restart looks like
+
+    bridge._handle_message(message_event(message_id="om_101", event_id="evt-2"))
+    drain(bridge)
+
+    assert len(app.called("turn/start")) == 1, "a locked thread must not launch a turn"
+    assert sum("另一个 Codex 客户端占用了" in text for text in texts(im)) == 1
+
+    # The scheduler keeps retrying every few seconds; the topic must not fill up.
+    bridge._safe_dispatch(thread_id)
+    drain(bridge)
+    assert sum("另一个 Codex 客户端占用了" in text for text in texts(im)) == 1
+    store.close()
+
+
+def test_foreign_turn_on_the_thread_is_reported(tmp_path):
+    bridge, store, im, app = build(tmp_path)
+    thread_id = start_first_task(bridge, store, im)
+    app.thread_turns = [{"id": "turn_from_the_desktop_app"}]
+    bridge.fresh_threads.clear()
+
+    bridge._handle_message(message_event(message_id="om_101", event_id="evt-2"))
+    drain(bridge)
+
+    assert any("在本机其它 Codex 客户端里被继续过" in text for text in texts(im))
+    assert len(app.called("turn/start")) == 2
+    assert store.turn_ids(thread_id) == {"turn_1", "turn_2"}
+    store.close()
+
+
+def test_lost_thread_is_replaced_and_the_message_still_runs(tmp_path):
+    """A thread the app-server forgot must be replaced, not retried forever."""
+    bridge, store, im, app = build(tmp_path)
+    thread_id = start_first_task(bridge, store, im)
+    route_before = store.route(thread_id)
+    app.resume_error = f"no rollout found for thread id {thread_id}"
+    bridge.fresh_threads.clear()  # what a bridge restart looks like
+
+    bridge._handle_message(message_event(message_id="om_101", event_id="evt-2"))
+    drain(bridge)
+
+    new_thread = str(store.binding("oc_1")["current_thread_id"])
+    assert new_thread != thread_id, "the lost thread must be replaced"
+    assert store.route(thread_id) is None, "the dead route must be gone"
+    migrated = store.route(new_thread)
+    assert migrated is not None
+    assert migrated["feishu_thread_id"] == route_before["feishu_thread_id"]
+    assert migrated["root_message_id"] == route_before["root_message_id"]
+
+    turns = app.called("turn/start")
+    assert turns[-1]["threadId"] == new_thread
+    assert any("运行上下文在 Codex 侧丢了" in text for text in texts(im))
+    assert store.running_turn(new_thread) is not None
+    store.close()
+
+
+def test_thread_recovery_is_attempted_once_per_message(tmp_path):
+    bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
+    bind(bridge, store)
+    bridge._handle_message(message_event())
+    drain(bridge)
+    old_thread = str(store.binding("oc_1")["current_thread_id"])
+    store.recover_queue()
+    queued = store.next_queued(old_thread)
+    assert queued is not None
+
+    bridge._recover_lost_thread(old_thread, queued)
+    created = len(app.called("thread/start"))
+    assert created == 2  # the original task plus one replacement
+
+    # A second attempt for the same message must not spawn another thread.
+    bridge._recover_lost_thread(old_thread, queued)
+    drain(bridge)
+    assert len(app.called("thread/start")) == created
+    status = store.db.execute(
+        "SELECT status FROM queued_turns WHERE id = ?", (queued["id"],)
+    ).fetchone()["status"]
+    assert status == "failed"
+    assert any("无法恢复" in text for text in texts(im))
+    store.close()
+
+
 def test_turn_completion_renders_the_result_and_next_actions(tmp_path):
     bridge, store, im, app = build(tmp_path, default_model="ark-code-latest")
     bind(bridge, store)

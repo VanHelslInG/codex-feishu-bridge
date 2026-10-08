@@ -7,6 +7,7 @@ import queue
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from feishu_bridge.core.appserver import AppServerError
 from feishu_bridge.im.base import ImAdapter, TopicRef
 
 
@@ -108,6 +109,8 @@ class FakeApp:
         self.thread_seq = itertools.count(1)
         self.turn_seq = itertools.count(1)
         self.started = 0
+        self.resume_error: Optional[str] = None
+        self.thread_turns: List[Dict[str, Any]] = []
         self.model_list: List[Dict[str, Any]] = [
             {"id": "ark-code-latest", "displayName": "Ark Code (Auto)"},
             {"id": "deepseek-v4.1-flash", "displayName": "DeepSeek V4.1 Flash"},
@@ -147,6 +150,15 @@ class FakeApp:
             return {"data": self.model_list}
         if method == "thread/start":
             return {"thread": {"id": f"th_{next(self.thread_seq)}"}}
+        if method == "thread/resume":
+            if self.resume_error:
+                raise AppServerError(self.resume_error)
+            return {
+                "thread": {
+                    "id": params.get("threadId"),
+                    "turns": list(self.thread_turns),
+                }
+            }
         if method == "thread/fork":
             return {"thread": {"id": f"th_{next(self.thread_seq)}"}}
         if method == "thread/list":

@@ -737,6 +737,15 @@ class Store:
             )
             self.db.commit()
 
+    def fail_turn(self, queue_id: int) -> None:
+        """Stop retrying a queued turn that cannot be delivered."""
+        with self.lock:
+            self.db.execute(
+                "UPDATE queued_turns SET status = 'failed', finished_at = ? WHERE id = ?",
+                (int(time.time()), queue_id),
+            )
+            self.db.commit()
+
     def queue_counts(self, thread_id: str) -> Tuple[int, int]:
         with self.lock:
             running = self.db.execute(
@@ -764,6 +773,15 @@ class Store:
                     (thread_id,),
                 ).fetchall()
             return [str(row["source_message_id"]) for row in rows]
+
+    def turn_ids(self, thread_id: str) -> set:
+        """Every turn id this bridge started on the thread."""
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT turn_id FROM queued_turns WHERE thread_id = ? AND turn_id <> ''",
+                (thread_id,),
+            ).fetchall()
+            return {str(row["turn_id"]) for row in rows}
 
     def recover_queue(self) -> int:
         """Return interrupted turns to the queue after a restart."""
@@ -857,6 +875,84 @@ class Store:
                 "continuation_thread_id = excluded.continuation_thread_id",
                 (source_thread_id, continuation_thread_id, int(time.time())),
             )
+            self.db.commit()
+
+    def migrate_thread(self, old_thread_id: str, new_thread_id: str) -> None:
+        """Move every reference from a lost Codex thread to its replacement.
+
+        A Codex thread that the app-server can no longer find (its rollout file
+        is gone) has to be replaced, not recreated in place: the Feishu topic,
+        the queued turns and the per-thread settings all have to follow.
+        """
+        prefixed = (
+            "progress",
+            "heartbeat",
+            "next_actions",
+            "compact_state",
+            "steer_response",
+            "upload_auth",
+            "coalesce_after_interrupt",
+        )
+        now_ms = int(time.time() * 1000)
+        with self.lock:
+            route = self.db.execute(
+                "SELECT * FROM thread_routes WHERE thread_id = ?", (old_thread_id,)
+            ).fetchone()
+            self.db.execute(
+                "UPDATE queued_turns SET thread_id = ?, turn_id = NULL, "
+                "status = CASE WHEN status = 'running' THEN 'queued' ELSE status END, "
+                "started_at = NULL WHERE thread_id = ?",
+                (new_thread_id, old_thread_id),
+            )
+            for table, column in (
+                ("message_routes", "thread_id"),
+                ("task_creations", "thread_id"),
+                ("turn_artifacts", "thread_id"),
+            ):
+                self.db.execute(
+                    f"UPDATE {table} SET {column} = ? WHERE {column} = ?",
+                    (new_thread_id, old_thread_id),
+                )
+            self.db.execute(
+                "UPDATE OR REPLACE thread_handoffs SET source_thread_id = ? "
+                "WHERE source_thread_id = ?",
+                (new_thread_id, old_thread_id),
+            )
+            self.db.execute(
+                "UPDATE OR REPLACE thread_handoffs SET continuation_thread_id = ? "
+                "WHERE continuation_thread_id = ?",
+                (new_thread_id, old_thread_id),
+            )
+            self.db.execute(
+                "UPDATE bindings SET current_thread_id = ? WHERE current_thread_id = ?",
+                (new_thread_id, old_thread_id),
+            )
+            for prefix in prefixed:
+                self.db.execute(
+                    "UPDATE settings SET key = ? WHERE key = ?",
+                    (f"{prefix}:{new_thread_id}", f"{prefix}:{old_thread_id}"),
+                )
+            if route is not None:
+                self.db.execute(
+                    "DELETE FROM thread_routes WHERE thread_id = ?", (old_thread_id,)
+                )
+                self.db.execute(
+                    "INSERT INTO thread_routes(thread_id, chat_id, feishu_thread_id, "
+                    "root_message_id, title, project, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(thread_id) DO UPDATE SET chat_id = excluded.chat_id, "
+                    "feishu_thread_id = excluded.feishu_thread_id, "
+                    "root_message_id = excluded.root_message_id, title = excluded.title, "
+                    "project = excluded.project, updated_at = excluded.updated_at",
+                    (
+                        new_thread_id,
+                        route["chat_id"],
+                        route["feishu_thread_id"],
+                        route["root_message_id"],
+                        route["title"],
+                        route["project"],
+                        now_ms,
+                    ),
+                )
             self.db.commit()
 
     def active_turn_count(self) -> int:
