@@ -1,8 +1,8 @@
 # 使用教学：从建群到跑完一个任务
 
 面向第一次使用的人。假设你已经按 [FEISHU-SETUP.md](FEISHU-SETUP.md) 在飞书开放平台
-建好自建应用、拿到了 App ID / App Secret，并且已经用 `install` / `install.sh` 装好桥、
-`start` / `start.sh` 把健康检查跑成 `ok: true`。
+建好自建应用、拿到了 App ID / App Secret，并且已经用 `windows\install.ps1` 装好桥、
+`windows\start.ps1` 把健康检查跑成 `ok: true`。
 
 ## 核心模型：一个飞书话题 = 一个 Codex 任务
 
@@ -38,8 +38,7 @@
 1. 在电脑上取配对码：
 
    ```powershell
-   .\windows\pair-code.ps1        # Windows
-   ./macos/pair-code.sh           # macOS
+   .\windows\pair-code.ps1
    ```
 
 2. 在飞书里把配对码发出去：在群里 `@机器人 /bind <配对码>`，或直接和机器人私聊
@@ -129,12 +128,12 @@
 
 | 现象 | 怎么办 |
 | --- | --- |
-| 发了消息没反应 | 确认桥在跑（`status.ps1` / `status.sh` 返回 `ok: true`）；确认话题所在群是话题形式；没拿到群消息权限时记得 @机器人 |
+| 发了消息没反应 | 确认桥在跑（`windows\status.ps1` 返回 `ok: true`）；确认话题所在群是话题形式；没拿到群消息权限时记得 @机器人 |
 | 回「这条消息里没有可处理的内容」 | 消息里既没有文字也没有图片/文件 |
 | 回「未配对」 | 先做 `/bind`，或把自己的 open_id 加进 `feishu.allowlist.open_ids` |
 | 图片/文件没回传 | 产物是否落在项目目录、`artifact_roots` 或桥的 `artifacts/` 下 |
 | 想换端口 | 改 `config.json` 的 `health_port`，然后重启桥 |
-| 想看现场日志 | 应用目录下的 `bridge.log`（Windows 默认 `%LOCALAPPDATA%\CodexFeishuBridge`，macOS 默认 `~/Library/Application Support/CodexFeishuBridge`） |
+| 想看现场日志 | 应用目录下的 `bridge.log`（默认 `D:\Codex\CodexFeishuBridge`，无 D: 盘时回退 `%LOCALAPPDATA%\CodexFeishuBridge`） |
 
 ## 安全边界（务必知道）
 
@@ -142,5 +141,5 @@
 也就是说，能驱动这个机器人的人，等于能在你机器上跑命令、改文件。
 
 - 只把桥配给可信的会话；`feishu.allowlist` 是你的第一道门。
-- App Secret 存在系统凭据库（Windows DPAPI / macOS 钥匙串），不进配置文件、不进仓库。
+- App Secret 存在 Windows DPAPI 保险库（`secrets.dat`），不进配置文件、不进仓库。
 - 产物回传是白名单制，别为了省事把 `artifact_roots` 设成整个盘。

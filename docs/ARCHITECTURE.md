@@ -54,7 +54,7 @@ watchdog 每 `check_interval_seconds` 检查一次：进程死了就重启；文
 | --- | --- |
 | `core/` | 与平台、IM 无关：配置、SQLite 状态机、app-server 客户端、指令解析 |
 | `im/feishu/` | 长连接接入、消息/卡片 API、Markdown→卡片渲染、卡片模板 |
-| `platform/` | 密钥存储（DPAPI / Keychain）、进程树控制、路径解析、FD 计数 |
+| `platform/` | 密钥存储（Windows DPAPI）、进程树控制、路径解析、FD 计数 |
 
 `im/base.py` 定义了适配接口，测试用内存假实现替换飞书，因此完整流程可以在不联网、
 不依赖飞书的条件下跑通。

@@ -86,10 +86,11 @@ class Platform:
 def current_platform() -> Platform:
     import os
 
-    if os.name == "nt":
-        from .windows import WindowsPlatform
+    if os.name != "nt":
+        raise NotImplementedError(
+            "This build ships the Windows adapter only. Run it on Windows, or add "
+            "an adapter under src/feishu_bridge/platform/ and wire it up here."
+        )
+    from .windows import WindowsPlatform
 
-        return WindowsPlatform()
-    from .macos import MacOSPlatform
-
-    return MacOSPlatform()
+    return WindowsPlatform()

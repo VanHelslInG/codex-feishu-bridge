@@ -31,11 +31,11 @@
 
 | 维度 | Telegram 版（macOS 专属） | 飞书版 |
 | --- | --- | --- |
-| 密钥 | Keychain（`security`） | Windows DPAPI 保险库 / macOS Keychain |
-| 自启 | launchd plist | Windows 先用手动脚本（`start/stop/status.ps1`），验证后再加计划任务 |
-| 进程树终止 | `os.killpg` | Windows `taskkill /T /F`；macOS `os.killpg` |
+| 密钥 | Keychain（`security`） | Windows DPAPI 保险库（`secrets.dat`） |
+| 自启 | launchd plist | Windows 计划任务每 2 分钟轮询 `ensure-running.ps1`，仅当 Codex 桌面端在跑才拉起 |
+| 进程树终止 | `os.killpg` | Windows `taskkill /T /F` |
 | Codex 路径 | `ChatGPT.app` 内置 CLI | `Get-Command codex` 解析，`config.json` 可覆盖 |
-| FD 计数 | `lsof` | macOS 同左；Windows 无对应实现，只保留年龄判据 |
+| FD 计数 | `lsof` | Windows 无对应实现，只保留年龄判据 |
 
 ## 本版没搬的功能
 

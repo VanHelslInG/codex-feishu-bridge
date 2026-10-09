@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | 内核 | `src/feishu_bridge/core/` | SQLite WAL 状态机、FIFO 调度与租约、app-server JSON-RPC 客户端、outbox 指数重试、指令解析、配置 |
 | IM | `src/feishu_bridge/im/feishu/` | 长连接事件入口、卡片构造、Markdown→卡片渲染、飞书 API 封装 |
-| 平台 | `src/feishu_bridge/platform/` | `base.py` 是接口；`windows.py` / `macos.py` 是凭据存储、进程组回收、路径与 Codex CLI 定位 |
+| 平台 | `src/feishu_bridge/platform/` | `base.py` 是接口；`windows.py` 是凭据存储（DPAPI）、进程组回收、路径与 Codex CLI 定位 |
 | 组装 | `src/feishu_bridge/bridge.py` | 接线 + 主循环 |
 
 规则：改 IM 只动 `im/`，改平台只动 `platform/`。**不要**为了某一个平台往
@@ -25,33 +25,26 @@
 
 依赖只有 `lark-oapi`，其余一律标准库。解释器要求 ≥ 3.9。
 
-```bash
-# 任意平台：建虚拟环境并安装
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
-
-# 启动（前台）
-PYTHONPATH=src .venv/bin/python -m feishu_bridge.bridge run
+```powershell
+.\windows\install.ps1 -Prompt   # 建虚拟环境、装依赖、写 config、凭据进 DPAPI
+.\windows\start.ps1             # 拉起 + 等健康检查
+.\windows\status.ps1
 ```
 
-Windows 用 `windows\install.ps1`、`start.ps1`、`stop.ps1`、`status.ps1`；
-macOS 用 `macos/install.sh`、`start.sh`、`stop.sh`、`status.sh`。两边的应用目录、
-日志与状态布局见 README「应用目录」一节。
+应用目录、日志与状态布局见 README。同一套核心也可以用
+`PYTHONPATH=src .venv\Scripts\python.exe -m feishu_bridge.bridge run` 前台跑。
 
-> Windows 上**不要**用系统 `python`（Microsoft Store 占位符，退出码 9009），
+> **不要**用系统 `python`（Microsoft Store 占位符，退出码 9009），
 > 用项目内 `.venv\Scripts\python.exe`。
 
 ## 怎么跑测试
 
-```bash
-PYTHONPATH=src .venv/bin/python -m pytest -q          # POSIX
-```
-
 ```powershell
-$env:PYTHONPATH = "src"; .\.venv\Scripts\python.exe -m pytest -q   # Windows
+$env:PYTHONPATH = "src"; .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-当前基线：**99 项全部通过**。改动内核或 IM 层后，这个数字只许增不许减。
+当前基线：**68 项全部通过**。（本仓库只发布 Windows 适配器，不含 macOS 适配层与
+其启动器资产的 31 项测试。）改动内核或 IM 层后，这个数字只许增不许减。
 
 ## 硬约束（改代码前先读）
 
@@ -61,13 +54,13 @@ $env:PYTHONPATH = "src"; .\.venv\Scripts\python.exe -m pytest -q   # Windows
 - **幂等优先**。入站以 `event_id` 做主键去重，消息另以 `message_id` 作为 turn 级幂等键。
   出站是 at-least-once（飞书消息 API 没有幂等键）。
 - **SQLite 是唯一真相源**。不要引入 Redis、队列服务之类的中间件。
-- **密钥不进仓库**。App Secret 走 Windows DPAPI（`secrets.dat`）或 macOS 钥匙串；
+- **密钥不进仓库**。App Secret 走 Windows DPAPI（`secrets.dat`）；
   `config.json`、`secrets.dat`、`state.sqlite3`、`bridge.log` 都在 `.gitignore` 里，
   别把它们提交上来。
 - **产物回传是白名单制**。只允许 `artifact_roots`、当前项目目录、桥自己的 `artifacts/`
   下的文件，别放宽。
 - **平台自启语义**：只在 **Codex 桌面端打开时**启动桥，不做开机自启
-  （Windows 计划任务轮询 ↔ macOS LaunchAgent `StartInterval`，两边行为必须一致）。
+  （计划任务每 2 分钟跑一次 `windows\ensure-running.ps1`，先判断桌面端在不在）。
 
 ## 最容易踩的坑
 
@@ -89,5 +82,5 @@ $env:PYTHONPATH = "src"; .\.venv\Scripts\python.exe -m pytest -q   # Windows
 
 - **Windows 11**：已实现并在真机跑通（安装、起停、配对、话题建任务、图片输入、
   恢复、watchdog、自启）。
-- **macOS**：代码路径已就绪（Keychain、launchd、CLI 自动定位），**尚未在真机验证**。
-  `macos/` 下的脚本与 plist 模板注释里都带 `NOT YET VERIFIED ON A REAL MAC` 标记。
+- **macOS**：不在本仓库。这个版只发布 Windows 适配器；`platform/base.py` 的
+  `current_platform()` 在非 Windows 上会直接抛出说明性错误，而不是静默失败。

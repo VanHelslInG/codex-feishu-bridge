@@ -2,7 +2,7 @@
 
 在飞书**话题形式群**里远程使用本机 Codex。一个飞书话题绑定一个 Codex 任务：同一任务内的消息按 FIFO 排队，不同任务并行运行。
 
-这是 `codex-telegram-bridge` 的飞书移植版：保留它已经跑通的持久化与调度内核，把 Telegram 层换成飞书、把 macOS 层换成跨平台适配层。
+这是 `codex-telegram-bridge` 的飞书移植版：保留它已经跑通的持久化与调度内核，把 Telegram 层换成飞书，并补上 Windows 平台的适配层。
 
 - 想直接用起来 → [docs/USAGE.md](docs/USAGE.md)（从建群、配对到跑完一个任务）
 - 给 AI 助手读的入口 → [AGENTS.md](AGENTS.md)（结构、测试、硬约束）与 [llms.txt](llms.txt)
@@ -22,12 +22,8 @@ codex app-server
 
 | 平台 | 状态 |
 | --- | --- |
-| Windows 11 | 已实现并在真机跑通：安装、起停、配对、话题建任务、FIFO 排队、模型记忆、图片输入与图文混排、卡片按钮、线程丢失自愈、断线重连、崩溃自愈、仅在 Codex 桌面端打开时自启。单元与集成测试 **99 项通过** |
-| macOS | 已实现（`install/start/stop/status/pair-code`、LaunchAgent、Keychain、Codex CLI 自动定位，适配层有单元测试覆盖）；**尚未在 Mac 真机上验证** |
-
-> **macOS 未做实机验证**：代码在 Windows 上开发，macOS 侧只做过静态审查与单元测试。
-> 第一次上机请按 [docs/MACOS-VERIFY.md](docs/MACOS-VERIFY.md) 的清单逐项确认；
-> `macos/*.sh` 与 plist 模板的注释里都带 `NOT YET VERIFIED ON A REAL MAC` 标记。
+| Windows 11 | 已实现并在真机跑通：安装、起停、配对、话题建任务、FIFO 排队、模型记忆、图片输入与图文混排、卡片按钮、线程丢失自愈、断线重连、崩溃自愈、仅在 Codex 桌面端打开时自启。单元与集成测试 **68 项通过** |
+| macOS | **不在本仓库**。这个版只发布 Windows 适配器；macOS 的启动器与 Keychain 适配没有随本仓库发布 |
 
 首版范围是核心闭环：消息/图片输入、任务路由与队列、审批卡片、进度与中断、结果与图片回传、重启恢复。
 语音（STT/TTS）、通知传感器、Computer Use、多实例隔离**不在本版**。
@@ -56,37 +52,6 @@ cd D:\Codex\飞书codex机器人
 4. 在群里 `@机器人 <项目> <任务内容>`，机器人会自动建话题、建任务并开始执行。之后直接在该话题里发消息即可继续。
 
 停止：`.\windows\stop.ps1`（SQLite 状态与产物都会保留）。
-
-## 快速开始（macOS）
-
-> 这套脚本从未在 Mac 上跑过，第一次上机请按
-> [docs/MACOS-VERIFY.md](docs/MACOS-VERIFY.md) 的清单逐项确认。
-
-```bash
-cd ~/codex-feishu-bridge
-./macos/install.sh --prompt      # 建虚拟环境、装依赖、写 config、把凭据存进钥匙串
-./macos/start.sh                 # 前台预检 + 后台拉起 + 等健康检查
-./macos/status.sh
-./macos/pair-code.sh             # 取配对码，然后在飞书里 /bind
-```
-
-要装「只在 Codex 桌面端打开时启动」的 LaunchAgent：
-
-```bash
-./macos/install-agent.sh         # 装 launchd 配置（改动当前用户的 launchd 状态）
-./macos/uninstall-agent.sh       # 卸载
-```
-
-停止：`./macos/stop.sh`（SQLite 状态与产物都会保留）。
-
-与 Windows 的对应关系：`install.sh ↔ install.ps1`、`start/stop/status/pair-code`
-一一对应、`install-agent.sh ↔ install-autostart.ps1`。两边的自启语义一致——按
-`StartInterval` 轮询（120 秒），**只有当 Codex 桌面端在跑**才把桥拉起来，不开机自启、
-不在 Codex 关闭后继续跑。
-
-应用目录在 `~/Library/Application Support/CodexFeishuBridge`（`bridge.log`、
-`state.sqlite3`、`inbox/`、`artifacts/`），可用 `CODEX_FEISHU_BRIDGE_HOME` 覆盖。
-凭据存在登录钥匙串（service `codex-feishu-bridge`），不落盘、不进 Git。
 
 ## 项目别名
 
