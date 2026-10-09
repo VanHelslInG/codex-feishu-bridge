@@ -5,8 +5,10 @@
     Driven by a scheduled task (see install-autostart.ps1). Each run answers the
     cheapest question first:
 
-      1. Is the Codex desktop app running?  If not, do nothing at all — the
-         bridge is only wanted while the user is actually using Codex.
+      1. Is the Codex desktop app running?  If not, stop any bridge that is
+         still up and exit — the bridge is only wanted while the user is
+         actually using Codex, and a closed app must not leave a process tree
+         (and its `codex app-server` child) behind.
       2. Is something listening on the health port?  A TCP connect is
          milliseconds; an HTTP GET against a closed port used to burn 2.2 s.
       3. Is the health payload healthy?
@@ -73,7 +75,22 @@ function Test-PortOpen([int]$Port) {
 }
 
 if (-not $IgnoreCodexApp -and -not (Test-CodexAppRunning)) {
-    Write-Host 'The Codex desktop app is not running; leaving the bridge alone.'
+    $leftover = $false
+    if (Test-Path $pidFile) {
+        $stalePid = Get-Content $pidFile -ErrorAction SilentlyContinue
+        if ($stalePid -and (Get-Process -Id $stalePid -ErrorAction SilentlyContinue)) {
+            $leftover = $true
+        }
+    }
+    if (-not $leftover -and (Test-PortOpen $port)) {
+        $leftover = $true
+    }
+    if ($leftover) {
+        Write-Host 'The Codex desktop app is not running; stopping the leftover bridge.'
+        & (Join-Path $PSScriptRoot 'stop.ps1') | Out-Null
+    } else {
+        Write-Host 'The Codex desktop app is not running; the bridge is already down.'
+    }
     exit 0
 }
 

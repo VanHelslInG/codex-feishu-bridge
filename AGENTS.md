@@ -60,7 +60,9 @@ $env:PYTHONPATH = "src"; .\.venv\Scripts\python.exe -m pytest -q
 - **产物回传是白名单制**。只允许 `artifact_roots`、当前项目目录、桥自己的 `artifacts/`
   下的文件，别放宽。
 - **平台自启语义**：只在 **Codex 桌面端打开时**启动桥，不做开机自启
-  （计划任务每 2 分钟跑一次 `windows\ensure-running.ps1`，先判断桌面端在不在）。
+  （计划任务每 2 分钟跑一次 `windows\ensure-running.ps1`，先判断桌面端在不在）；
+  **桌面端关掉之后，同一轮扫描要把桥连同它的 `codex app-server` 子进程一起收掉**，
+  不留进程残留。
 
 ## 最容易踩的坑
 
